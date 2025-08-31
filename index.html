@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinica del Sol - Formulario Digital</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^0.14.0",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "pdf-lib": "https://esm.sh/pdf-lib@^1.17.1",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.44.4"
+  }
+}
+</script>
+    <script type="module" src="index.tsx"></script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <header>
+        <div class="logo-group">
+            <div class="logo">
+                <div class="logo-img"></div>
+                <div>
+                    <h1>Clinica del Sol</h1>
+                    <h2>Clinica Privada</h2>
+                </div>
+            </div>
+        </div>
+        <div id="user-session" style="display: none;">
+            <p id="user-info"></p>
+            <button id="logout-btn" class="btn-secondary">Cerrar Sesión</button>
+        </div>
+    </header>
+
+    <div id="auth-container">
+        <!-- Login Form -->
+        <div id="login-view">
+            <div class="auth-form">
+                <div class="auth-logo-container">
+                    <div class="logo-img auth-logo"></div>
+                </div>
+                <h2>Iniciar Sesión</h2>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-username">Usuario</label>
+                        <input type="text" id="login-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Contraseña</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <p id="login-error" class="error-message" style="display: none;">Usuario o contraseña incorrectos.</p>
+                    <button type="submit" class="btn-primary full-width">Ingresar</button>
+                </form>
+                <p class="auth-switch">Si no tienes una cuenta, contacta a un administrador.</p>
+                <div class="powered-by">
+                    <span>by</span>
+                    <div class="powered-by-logo group">
+                        <svg viewBox="0 0 160 40" xmlns="http://www.w3.org/2000/svg" class="dlx-logo-svg">
+                            <defs>
+                                <linearGradient id="glowGradientAuth" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color: #c084fc; stop-opacity: 1"></stop>
+                                    <stop offset="100%" style="stop-color: #9333ea; stop-opacity: 1"></stop>
+                                </linearGradient>
+                                <filter id="glowAuth" x="-50%" y="-50%" width="200%" height="200%">
+                                    <feGaussianBlur stdDeviation="3.5" result="coloredBlur"></feGaussianBlur>
+                                    <feMerge>
+                                        <feMergeNode in="coloredBlur"></feMergeNode>
+                                        <feMergeNode in="SourceGraphic"></feMergeNode>
+                                    </feMerge>
+                                </filter>
+                                 <pattern id="scanlines-auth" width="4" height="4" patternUnits="userSpaceOnUse">
+                                   <path d="M -1 1 H 5" stroke="rgba(255, 255, 255, 0.1)" stroke-width="1"/>
+                                </pattern>
+                            </defs>
+                            <text x="5" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" fill="url(#glowGradientAuth)" class="logo-text-base">DL</text>
+                            <text x="5" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-cyan">DL</text>
+                            <text x="5" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-magenta">DL</text>
+                            <g transform="translate(43, 0)" stroke="url(#glowGradientAuth)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 14 H 26 V 26 H 14 Z"></path>
+                                <g>
+                                    <path d="M20 14 V 4"></path>
+                                    <path d="M20 26 V 36"></path>
+                                    <path d="M14 20 H 4"></path>
+                                    <path d="M26 20 H 36"></path>
+                                    <path d="M14 14 L 8 8"></path>
+                                    <path d="M26 14 L 32 8"></path>
+                                    <path d="M14 26 L 8 32"></path>
+                                    <path d="M26 26 L 32 32"></path>
+                                </g>
+                            </g>
+                             <text x="77" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" fill="url(#glowGradientAuth)" class="logo-text-base">TECH</text>
+                             <text x="77" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-cyan">TECH</text>
+                             <text x="77" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-magenta">TECH</text>
+                            <g transform="translate(43, 0)" filter="url(#glowAuth)" class="logo-glow-effect">
+                                <g stroke="var(--primary-blue)" stroke-width="2" fill="none">
+                                    <path d="M14 14 H 26 V 26 H 14 Z"></path>
+                                    <path d="M20 14 V 4"></path>
+                                    <path d="M20 26 V 36"></path>
+                                    <path d="M14 20 H 4"></path>
+                                    <path d="M26 20 H 36"></path>
+                                    <path d="M14 14 L 8 8"></path>
+                                    <path d="M26 14 L 32 8"></path>
+                                    <path d="M14 26 L 8 32"></path>
+                                    <path d="M26 26 L 32 32"></path>
+                                </g>
+                            </g>
+                             <rect width="100%" height="100%" class="scan-lines" fill="url(#scanlines-auth)"></rect>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="app-container" style="display: none;">
+        <div id="lock-banner" class="lock-banner" style="display: none;"></div>
+        <main>
+            <div class="tabs">
+                <button class="tab-link active" data-tab="hemodinamia">Hemodinamia</button>
+                <button class="tab-link" data-tab="grupo-endoscopico">Grupo Endoscópico</button>
+                <button class="tab-link" data-tab="cirugias">Cirugías</button>
+                <button class="tab-link" data-tab="cirugia-anestesia">Cirugía con Anestesia</button>
+                <button class="tab-link" data-tab="admin-usuarios" id="admin-tab" style="display: none;">Administración</button>
+            </div>
+
+            <!-- Hemodinamia Form -->
+            <div id="hemodinamia" class="tab-content active">
+                <form id="hd-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section id="hd-page-1" class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-medico">Médico</label><input type="text" id="hd-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="hd-hc-n">HC N°</label><input type="text" id="hd-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="hd-apellido">Apellido</label><input type="text" id="hd-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="hd-edad">Edad</label><input type="number" id="hd-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="hd-nombres">Nombres</label><input type="text" id="hd-nombres" name="Nombres" required></div>
+                            <div class="form-group">
+                                <label for="hd-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="hd-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="hd-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="hd-domicilio">Domicilio</label><input type="text" id="hd-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="hd-telefono">Teléfono</label><input type="tel" id="hd-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="hd-estado-civil">Estado Civil</label><input type="text" id="hd-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="hd-cob-social">Cob. Social</label><input type="text" id="hd-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="hd-n-afiliado">N° Afiliado</label><input type="text" id="hd-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="hd-iva">Condición frente al IVA</label><input type="text" id="hd-iva" name="Condición IVA" required></div>
+                        </div>
+
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="hd-fam-nombre">Apellido y Nombre</label><input type="text" id="hd-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="hd-fam-domicilio">Domicilio</label><input type="text" id="hd-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="hd-fam-tel">Tel.</label><input type="tel" id="hd-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="hd-fam-dni">DNI</label><input type="text" id="hd-fam-dni" name="Familiar DNI" required></div>
+                        </div>
+
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="hd-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="hd-hora-ingreso">Hora</label><input type="time" id="hd-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="hd-fecha-egreso">Fecha de Egreso</label><input type="date" id="hd-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="hd-hora-egreso">Hora</label><input type="time" id="hd-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 2: ADMISSION -->
+                    <section id="hd-page-2" class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-paciente-2">Paciente</label><input type="text" id="hd-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="hd-hc-2">HC</label><input type="text" id="hd-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="hd-servicio">Servicio</label><input type="text" id="hd-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="hd-habitacion">Habitación</label><input type="text" id="hd-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="hd-cama">Cama</label><input type="text" id="hd-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="hd-fecha-2">Fecha</label><input type="date" id="hd-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="hd-motivo-internacion">Motivo de Internación</label><textarea id="hd-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="hd-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-estado-actual">Estado Actual</label><textarea id="hd-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-antecedentes">Antecedentes</label><textarea id="hd-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section id="hd-page-3" class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="hd-cabeza-cuello">Cabeza y Cuello</label><textarea id="hd-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-respiratorio">Aparato Respiratorio</label><textarea id="hd-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="hd-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-digestivo">Aparato Digestivo</label><textarea id="hd-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-locomotor">Aparato Locomotor</label><textarea id="hd-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-genitourinario">Aparato Genitourinario</label><textarea id="hd-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-sistema-nervioso">Sistema Nervioso</label><textarea id="hd-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-observaciones">Observaciones</label><textarea id="hd-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-estudios-complementarios">Estudios Complementarios</label><textarea id="hd-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-tratamiento">Tratamiento</label><textarea id="hd-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 4: SURGICAL REPORT -->
+                    <section id="hd-page-4" class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico Hoja 2</h3>
+                        <div class="form-group full-width"><label for="hd-paciente-4">Paciente</label><input type="text" id="hd-paciente-4" name="Paciente (Quirúrgico)" required></div>
+                        <div class="form-group full-width"><label for="hd-reporte-quirurgico">Descripción Quirúrgica</label><textarea id="hd-reporte-quirurgico" name="Reporte Quirúrgico" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 5: MEDICAL PRACTICES -->
+                    <section id="hd-page-5" class="form-section" data-role="medico">
+                        <h3>Prácticas Médicas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-paciente-5">Paciente</label><input type="text" id="hd-paciente-5" name="Paciente (Prácticas)" required></div>
+                            <div class="form-group"><label for="hd-medico-cabecera">Médico de Cabecera</label><input type="text" id="hd-medico-cabecera" name="Médico de Cabecera" required></div>
+                        </div>
+                        <div class="table-container">
+                            <table class="practicas-medicas-table" data-table-name="practicasMedicas">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Código</th>
+                                        <th>Descripción</th>
+                                        <th>Cant.</th>
+                                        <th>Observación</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-practica-row">Agregar Fila</button>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-4"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-4">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 6: NURSING CONTROL -->
+                    <section id="hd-page-6" class="form-section" data-role="enfermero">
+                        <h3>Control de Enfermería</h3>
+                        <div class="form-group full-width"><label for="hd-paciente-6">Paciente</label><input type="text" id="hd-paciente-6" name="Paciente (Enfermería)" required></div>
+                        <div class="table-container">
+                            <table class="enfermeria-table" data-table-name="enfermeria">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Hora</th>
+                                        <th>T.A.</th>
+                                        <th>F.C.</th>
+                                        <th>F.R.</th>
+                                        <th>Temp.</th>
+                                        <th>Observaciones</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-enfermeria-row">Agregar Fila</button>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-enfermero"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-enfermero">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+
+            <!-- Grupo Endoscópico Form -->
+            <div id="grupo-endoscopico" class="tab-content">
+                <form id="ge-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section id="ge-page-1" class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-medico">Médico</label><input type="text" id="ge-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="ge-hc-n">HC N°</label><input type="text" id="ge-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="ge-apellido">Apellido</label><input type="text" id="ge-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="ge-edad">Edad</label><input type="number" id="ge-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="ge-nombres">Nombres</label><input type="text" id="ge-nombres" name="Nombres" required></div>
+                            <div class="form-group">
+                                <label for="ge-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="ge-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="ge-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="ge-domicilio">Domicilio</label><input type="text" id="ge-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="ge-telefono">Teléfono</label><input type="tel" id="ge-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="ge-estado-civil">Estado Civil</label><input type="text" id="ge-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="ge-cob-social">Cob. Social</label><input type="text" id="ge-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="ge-n-afiliado">N° Afiliado</label><input type="text" id="ge-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="ge-iva">Condición frente al IVA</label><input type="text" id="ge-iva" name="Condición IVA" required></div>
+                        </div>
+
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="ge-fam-nombre">Apellido y Nombre</label><input type="text" id="ge-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="ge-fam-domicilio">Domicilio</label><input type="text" id="ge-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="ge-fam-tel">Tel.</label><input type="tel" id="ge-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="ge-fam-dni">DNI</label><input type="text" id="ge-fam-dni" name="Familiar DNI" required></div>
+                        </div>
+
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="ge-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="ge-hora-ingreso">Hora</label><input type="time" id="ge-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="ge-fecha-egreso">Fecha de Egreso</label><input type="date" id="ge-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="ge-hora-egreso">Hora</label><input type="time" id="ge-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 2: ADMISSION -->
+                    <section id="ge-page-2" class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-paciente-2">Paciente</label><input type="text" id="ge-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="ge-hc-2">HC</label><input type="text" id="ge-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="ge-servicio">Servicio</label><input type="text" id="ge-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="ge-habitacion">Habitación</label><input type="text" id="ge-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="ge-cama">Cama</label><input type="text" id="ge-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="ge-fecha-2">Fecha</label><input type="date" id="ge-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ge-motivo-internacion">Motivo de Internación</label><textarea id="ge-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="ge-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-estado-actual">Estado Actual</label><textarea id="ge-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-antecedentes">Antecedentes</label><textarea id="ge-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section id="ge-page-3" class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="ge-cabeza-cuello">Cabeza y Cuello</label><textarea id="ge-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-respiratorio">Aparato Respiratorio</label><textarea id="ge-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="ge-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-digestivo">Aparato Digestivo</label><textarea id="ge-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-locomotor">Aparato Locomotor</label><textarea id="ge-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-genitourinario">Aparato Genitourinario</label><textarea id="ge-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-sistema-nervioso">Sistema Nervioso</label><textarea id="ge-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-observaciones">Observaciones</label><textarea id="ge-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-estudios-complementarios">Estudios Complementarios</label><textarea id="ge-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-tratamiento">Tratamiento</label><textarea id="ge-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 4: EVOLUCION -->
+                    <section id="ge-page-4" class="form-section" data-role="medico">
+                        <h3>Evolución</h3>
+                        <div class="form-group full-width"><label for="ge-paciente-evolucion">Paciente</label><input type="text" id="ge-paciente-evolucion" name="Paciente (Evolución)" required></div>
+                        <div class="form-group full-width"><label for="ge-evolucion-notas">Notas de Evolución</label><textarea id="ge-evolucion-notas" name="Evolución Notas" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 5: REPORT -->
+                    <section id="ge-page-5" class="form-section" data-role="enfermero">
+                        <h3>Report</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-paciente-report">Paciente</label><input type="text" id="ge-paciente-report" name="Paciente (Report)" required></div>
+                            <div class="form-group"><label for="ge-fecha-report">Fecha</label><input type="date" id="ge-fecha-report" name="Fecha (Report)" required></div>
+                            <div class="form-group"><label for="ge-sala-report">Sala</label><input type="text" id="ge-sala-report" name="Sala (Report)" required></div>
+                            <div class="form-group"><label for="ge-cama-report">Cama</label><input type="text" id="ge-cama-report" name="Cama (Report)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ge-report-contenido">Contenido del Reporte</label><textarea id="ge-report-contenido" name="Report Contenido" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-enfermero"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-enfermero">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+
+            <!-- Cirugías Form -->
+            <div id="cirugias" class="tab-content">
+                <form id="cg-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section id="cg-page-1" class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-medico">Médico</label><input type="text" id="cg-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="cg-hc-n">HC N°</label><input type="text" id="cg-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="cg-apellido">Apellido</label><input type="text" id="cg-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="cg-edad">Edad</label><input type="number" id="cg-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="cg-nombres">Nombres</label><input type="text" id="cg-nombres" name="Nombres" required></div>
+                             <div class="form-group">
+                                <label for="cg-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="cg-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="cg-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="cg-domicilio">Domicilio</label><input type="text" id="cg-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="cg-telefono">Teléfono</label><input type="tel" id="cg-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="cg-estado-civil">Estado Civil</label><input type="text" id="cg-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="cg-cob-social">Cob. Social</label><input type="text" id="cg-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="cg-n-afiliado">N° Afiliado</label><input type="text" id="cg-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="cg-iva">Condición frente al IVA</label><input type="text" id="cg-iva" name="Condición IVA" required></div>
+                        </div>
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="cg-fam-nombre">Apellido y Nombre</label><input type="text" id="cg-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="cg-fam-domicilio">Domicilio</label><input type="text" id="cg-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="cg-fam-tel">Tel.</label><input type="tel" id="cg-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="cg-fam-dni">DNI</label><input type="text" id="cg-fam-dni" name="Familiar DNI" required></div>
+                        </div>
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="cg-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="cg-hora-ingreso">Hora</label><input type="time" id="cg-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="cg-fecha-egreso">Fecha de Egreso</label><input type="date" id="cg-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="cg-hora-egreso">Hora</label><input type="time" id="cg-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 2: ADMISSION -->
+                    <section id="cg-page-2" class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-paciente-2">Paciente</label><input type="text" id="cg-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="cg-hc-2">HC</label><input type="text" id="cg-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="cg-servicio">Servicio</label><input type="text" id="cg-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="cg-habitacion">Habitación</label><input type="text" id="cg-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="cg-cama">Cama</label><input type="text" id="cg-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="cg-fecha-2">Fecha</label><input type="date" id="cg-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="cg-motivo-internacion">Motivo de Internación</label><textarea id="cg-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="cg-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-estado-actual">Estado Actual</label><textarea id="cg-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-antecedentes">Antecedentes</label><textarea id="cg-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section id="cg-page-3" class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="cg-cabeza-cuello">Cabeza y Cuello</label><textarea id="cg-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-respiratorio">Aparato Respiratorio</label><textarea id="cg-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="cg-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-digestivo">Aparato Digestivo</label><textarea id="cg-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-locomotor">Aparato Locomotor</label><textarea id="cg-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-genitourinario">Aparato Genitourinario</label><textarea id="cg-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-sistema-nervioso">Sistema Nervioso</label><textarea id="cg-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-observaciones">Observaciones</label><textarea id="cg-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-estudios-complementarios">Estudios Complementarios</label><textarea id="cg-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-tratamiento">Tratamiento</label><textarea id="cg-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 4: SURGICAL REPORT 1 -->
+                    <section id="cg-page-4" class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico</h3>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                            <div class="form-group"><label for="cg-paciente-4">Paciente</label><input type="text" id="cg-paciente-4" name="Paciente (PQ)" required></div>
+                            <div class="form-group"><label for="cg-grupo">Grupo</label><input type="text" id="cg-grupo" name="Grupo Sanguíneo" required></div>
+                            <div class="form-group"><label for="cg-rh">RH</label><input type="text" id="cg-rh" name="Factor RH" required></div>
+                        </div>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                             <div class="form-group"><label for="cg-servicio-4">Servicio</label><input type="text" id="cg-servicio-4" name="Servicio (PQ)" required></div>
+                            <div class="form-group"><label for="cg-hab-4">Hab.</label><input type="text" id="cg-hab-4" name="Habitación (PQ)" required></div>
+                            <div class="form-group"><label for="cg-cama-4">Cama</label><input type="text" id="cg-cama-4" name="Cama (PQ)" required></div>
+                        </div>
+                         <div class="form-grid">
+                            <div class="form-group"><label for="cg-fecha-cirugia">Fecha de Cirugía</label><input type="date" id="cg-fecha-cirugia" name="Fecha de Cirugía" required></div>
+                            <div class="form-group"><label for="cg-hora-cirugia">Hora</label><input type="time" id="cg-hora-cirugia" name="Hora de Cirugía" required></div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-cirujano">Cirujano</label><input type="text" id="cg-cirujano" name="Cirujano" required></div>
+                            <div class="form-group"><label for="cg-ayudante1">Ayudante 1</label><input type="text" id="cg-ayudante1" name="Ayudante 1" required></div>
+                            <div class="form-group"><label for="cg-ayudante2">Ayudante 2</label><input type="text" id="cg-ayudante2" name="Ayudante 2" required></div>
+                             <div class="form-group"><label for="cg-pediatra">Pediatra</label><input type="text" id="cg-pediatra" name="Pediatra" required></div>
+                            <div class="form-group"><label for="cg-anestesista">Anestesista</label><input type="text" id="cg-anestesista" name="Anestesista" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="cg-diagnostico-preop">Diagnóstico Preoperatorio</label><textarea id="cg-diagnostico-preop" name="Diagnóstico Preoperatorio" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-operacion-practicada">Operación Practicada</label><textarea id="cg-operacion-practicada" name="Operación Practicada" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-detalles-tecnica">Detalles de la Técnica</label><textarea id="cg-detalles-tecnica" name="Detalles de la Técnica" rows="6" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 5: SURGICAL REPORT 2 -->
+                    <section id="cg-page-5" class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico Hoja 2</h3>
+                        <div class="form-group full-width"><label for="cg-paciente-5">Paciente</label><input type="text" id="cg-paciente-5" name="Paciente (PQ2)" required></div>
+                        <div class="form-group full-width"><label for="cg-detalles-quirurgico-2">Detalles Quirúrgicos (Continuación)</label><textarea id="cg-detalles-quirurgico-2" name="Detalles Quirúrgicos Hoja 2" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-4"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-4">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 6: EVOLUCION -->
+                    <section id="cg-page-6" class="form-section" data-role="medico">
+                        <h3>Evolución</h3>
+                        <div class="form-group full-width"><label for="cg-paciente-evolucion">Paciente</label><input type="text" id="cg-paciente-evolucion" name="Paciente (Evolución)" required></div>
+                        <div class="form-group full-width"><label for="cg-evolucion-notas">Notas de Evolución</label><textarea id="cg-evolucion-notas" name="Evolución Notas" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-5"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-5">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+
+            <!-- Cirugia con Anestesia Form -->
+            <div id="cirugia-anestesia" class="tab-content">
+                <form id="ca-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-medico">Médico</label><input type="text" id="ca-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="ca-hc-n">HC N°</label><input type="text" id="ca-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="ca-apellido">Apellido</label><input type="text" id="ca-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="ca-edad">Edad</label><input type="number" id="ca-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="ca-nombres">Nombres</label><input type="text" id="ca-nombres" name="Nombres" required></div>
+                             <div class="form-group">
+                                <label for="ca-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="ca-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="ca-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="ca-domicilio">Domicilio</label><input type="text" id="ca-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="ca-telefono">Teléfono</label><input type="tel" id="ca-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="ca-estado-civil">Estado Civil</label><input type="text" id="ca-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="ca-cob-social">Cob. Social</label><input type="text" id="ca-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="ca-n-afiliado">N° Afiliado</label><input type="text" id="ca-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="ca-iva">Condición frente al IVA</label><input type="text" id="ca-iva" name="Condición IVA" required></div>
+                        </div>
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="ca-fam-nombre">Apellido y Nombre</label><input type="text" id="ca-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="ca-fam-domicilio">Domicilio</label><input type="text" id="ca-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="ca-fam-tel">Tel.</label><input type="tel" id="ca-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="ca-fam-dni">DNI</label><input type="text" id="ca-fam-dni" name="Familiar DNI" required></div>
+                        </div>
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="ca-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="ca-hora-ingreso">Hora</label><input type="time" id="ca-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="ca-fecha-egreso">Fecha de Egreso</label><input type="date" id="ca-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="ca-hora-egreso">Hora</label><input type="time" id="ca-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 2: ADMISSION -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-paciente-2">Paciente</label><input type="text" id="ca-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="ca-hc-2">HC</label><input type="text" id="ca-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="ca-servicio">Servicio</label><input type="text" id="ca-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="ca-habitacion">Habitación</label><input type="text" id="ca-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="ca-cama">Cama</label><input type="text" id="ca-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="ca-fecha-2">Fecha</label><input type="date" id="ca-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ca-motivo-internacion">Motivo de Internación</label><textarea id="ca-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="ca-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-estado-actual">Estado Actual</label><textarea id="ca-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-antecedentes">Antecedentes</label><textarea id="ca-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="ca-cabeza-cuello">Cabeza y Cuello</label><textarea id="ca-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-respiratorio">Aparato Respiratorio</label><textarea id="ca-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="ca-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-digestivo">Aparato Digestivo</label><textarea id="ca-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-locomotor">Aparato Locomotor</label><textarea id="ca-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-genitourinario">Aparato Genitourinario</label><textarea id="ca-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-sistema-nervioso">Sistema Nervioso</label><textarea id="ca-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-observaciones">Observaciones</label><textarea id="ca-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-estudios-complementarios">Estudios Complementarios</label><textarea id="ca-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-tratamiento">Tratamiento</label><textarea id="ca-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 4: SURGICAL REPORT 1 -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico</h3>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                            <div class="form-group"><label for="ca-paciente-4">Paciente</label><input type="text" id="ca-paciente-4" name="Paciente (PQ)" required></div>
+                            <div class="form-group"><label for="ca-grupo">Grupo</label><input type="text" id="ca-grupo" name="Grupo Sanguíneo" required></div>
+                            <div class="form-group"><label for="ca-rh">RH</label><input type="text" id="ca-rh" name="Factor RH" required></div>
+                        </div>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                             <div class="form-group"><label for="ca-servicio-4">Servicio</label><input type="text" id="ca-servicio-4" name="Servicio (PQ)" required></div>
+                            <div class="form-group"><label for="ca-hab-4">Hab.</label><input type="text" id="ca-hab-4" name="Habitación (PQ)" required></div>
+                            <div class="form-group"><label for="ca-cama-4">Cama</label><input type="text" id="ca-cama-4" name="Cama (PQ)" required></div>
+                        </div>
+                         <div class="form-grid">
+                            <div class="form-group"><label for="ca-fecha-cirugia">Fecha de Cirugía</label><input type="date" id="ca-fecha-cirugia" name="Fecha de Cirugía" required></div>
+                            <div class="form-group"><label for="ca-hora-cirugia">Hora</label><input type="time" id="ca-hora-cirugia" name="Hora de Cirugía" required></div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-cirujano">Cirujano</label><input type="text" id="ca-cirujano" name="Cirujano" required></div>
+                            <div class="form-group"><label for="ca-ayudante1">Ayudante 1</label><input type="text" id="ca-ayudante1" name="Ayudante 1" required></div>
+                            <div class="form-group"><label for="ca-ayudante2">Ayudante 2</label><input type="text" id="ca-ayudante2" name="Ayudante 2" required></div>
+                             <div class="form-group"><label for="ca-pediatra">Pediatra</label><input type="text" id="ca-pediatra" name="Pediatra" required></div>
+                            <div class="form-group"><label for="ca-anestesista">Anestesista</label><input type="text" id="ca-anestesista" name="Anestesista" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ca-diagnostico-preop">Diagnóstico Preoperatorio</label><textarea id="ca-diagnostico-preop" name="Diagnóstico Preoperatorio" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-operacion-practicada">Operación Practicada</label><textarea id="ca-operacion-practicada" name="Operación Practicada" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-detalles-tecnica">Detalles de la Técnica</label><textarea id="ca-detalles-tecnica" name="Detalles de la Técnica" rows="6" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 5: SURGICAL REPORT 2 -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico Hoja 2</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-5">Paciente</label><input type="text" id="ca-paciente-5" name="Paciente (PQ2)" required></div>
+                        <div class="form-group full-width"><label for="ca-detalles-quirurgico-2">Detalles Quirúrgicos (Continuación)</label><textarea id="ca-detalles-quirurgico-2" name="Detalles Quirúrgicos Hoja 2" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-4"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-4">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- Anestesia Protocol -->
+                    <section class="form-section" data-role="anestesista">
+                        <h3>Protocolo Anestésico</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-anest">Paciente</label><input type="text" id="ca-paciente-anest" name="Paciente (Anestesia)" required></div>
+                        <div class="form-group">
+                            <label for="ca-protocolo-escaneado">Adjuntar Protocolo Escaneado (PDF)</label>
+                            <input type="file" id="ca-protocolo-escaneado" name="protocolo-escaneado" accept="application/pdf">
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-anestesista"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-anestesista">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                     <!-- PAGE 6: EVOLUCION -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Evolución</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-evolucion">Paciente</label><input type="text" id="ca-paciente-evolucion" name="Paciente (Evolución)" required></div>
+                        <div class="form-group full-width"><label for="ca-evolucion-notas">Notas de Evolución</label><textarea id="ca-evolucion-notas" name="Evolución Notas" rows="20" required></textarea></div>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-5"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-5">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 7: PRESCRIPCIONES -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Prescripciones Médicas</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-presc">Paciente</label><input type="text" id="ca-paciente-presc" name="Paciente (Prescripciones)" required></div>
+                        <div class="table-container">
+                             <table class="prescripciones-table" data-table-name="prescripciones">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Indicaciones</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-prescripcion-row">Agregar Fila</button>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-6"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-6">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                     <!-- PAGE 8: MEDICAL PRACTICES -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Prácticas Médicas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-paciente-practicas">Paciente</label><input type="text" id="ca-paciente-practicas" name="Paciente (Prácticas)" required></div>
+                            <div class="form-group"><label for="ca-medico-cabecera">Médico de Cabecera</label><input type="text" id="ca-medico-cabecera" name="Médico de Cabecera" required></div>
+                        </div>
+                        <div class="table-container">
+                            <table class="practicas-medicas-table" data-table-name="practicasMedicas">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Código</th>
+                                        <th>Descripción</th>
+                                        <th>Cant.</th>
+                                        <th>Observación</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-practica-row">Agregar Fila</button>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-7"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-7">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 9: NURSING CONTROL -->
+                    <section class="form-section" data-role="enfermero">
+                        <h3>Control de Enfermería</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-enfermeria">Paciente</label><input type="text" id="ca-paciente-enfermeria" name="Paciente (Enfermería)" required></div>
+                        <div class="table-container">
+                            <table class="enfermeria-table" data-table-name="enfermeria">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Hora</th>
+                                        <th>T.A.</th>
+                                        <th>F.C.</th>
+                                        <th>F.R.</th>
+                                        <th>Temp.</th>
+                                        <th>Observaciones</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-enfermeria-row">Agregar Fila</button>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-enfermero"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-enfermero">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 10: REPORT -->
+                    <section class="form-section" data-role="enfermero">
+                        <h3>Report</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-paciente-report">Paciente</label><input type="text" id="ca-paciente-report" name="Paciente (Report)" required></div>
+                            <div class="form-group"><label for="ca-fecha-report">Fecha</label><input type="date" id="ca-fecha-report" name="Fecha (Report)" required></div>
+                            <div class="form-group"><label for="ca-sala-report">Sala</label><input type="text" id="ca-sala-report" name="Sala (Report)" required></div>
+                            <div class="form-group"><label for="ca-cama-report">Cama</label><input type="text" id="ca-cama-report" name="Cama (Report)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ca-report-contenido">Contenido del Reporte</label><textarea id="ca-report-contenido" name="Report Contenido" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-enfermero-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-enfermero-2">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+            
+            <!-- Admin User Management -->
+            <div id="admin-usuarios" class="tab-content">
+                <section class="form-section">
+                    <h3>Crear Nuevo Usuario</h3>
+                    <form id="create-user-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="create-nombre">Nombre</label>
+                                <input type="text" id="create-nombre" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="create-apellido">Apellido</label>
+                                <input type="text" id="create-apellido" required>
+                            </div>
+                        </div>
+                         <div class="form-group">
+                            <label for="create-especialidad">Especialidad / Puesto</label>
+                            <select id="create-especialidad" required>
+                                <option value="">Seleccione una opción...</option>
+                                <option value="Médico">Médico</option>
+                                <option value="Enfermero">Enfermero</option>
+                                <option value="Anestesista">Anestesista</option>
+                                <option value="Administrativo">Administrativo</option>
+                                <option value="Administrador">Administrador</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="create-matricula-group" style="display: none;">
+                            <label for="create-matricula">Matrícula</label>
+                            <input type="text" id="create-matricula">
+                        </div>
+                         <div class="form-group">
+                            <label for="create-firma">Firma (archivo de imagen)</label>
+                            <input type="file" id="create-firma" accept="image/png, image/jpeg">
+                        </div>
+                        <hr/>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="create-username">Usuario</label>
+                                <input type="text" id="create-username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="create-password">Contraseña</label>
+                                <input type="password" id="create-password" required>
+                            </div>
+                        </div>
+                        <p id="create-user-error" class="error-message" style="display: none;"></p>
+                        <p id="create-user-success" class="success-message" style="display: none;"></p>
+                        <button type="submit" class="btn-primary">Crear Usuario</button>
+                    </form>
+                </section>
+                <section class="form-section">
+                    <h3>Usuarios Existentes</h3>
+                    <div class="table-container">
+                        <table id="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre Completo</th>
+                                    <th>Usuario</th>
+                                    <th>Especialidad</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <!-- User rows will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+        </main>
+
+        <footer>
+            <input type="file" id="import-clinic-input" accept=".clinic" style="display: none;">
+            <div class="form-actions">
+                <button id="import-clinic-btn" class="btn-secondary">Importar .clinic</button>
+                <button id="export-clinic-btn" class="btn-export">Exportar .clinic</button>
+                <button id="save-progress-btn" class="btn-secondary">Guardar Progreso</button>
+                <button id="generate-alta-btn" class="btn-primary">Generar Alta y PDF</button>
+            </div>
+        </footer>
+    </div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
