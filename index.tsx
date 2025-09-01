@@ -16,10 +16,6 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import jsPDF from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
 
-// --- Supabase Setup ---
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
 // --- User Profile Type Definition ---
 interface UserProfile {
     id: string; // UUID from auth.users
@@ -143,6 +139,10 @@ const apiCreateUser = async (userData: { username: string, password: string, pro
 
 
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Supabase Setup ---
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
         document.body.innerHTML = `<div style="padding: 2rem; text-align: center; font-family: sans-serif; color: red;">
             <h1>Error de Configuración</h1>
