@@ -140,8 +140,16 @@ const apiGetAllUsers = async (): Promise<UserProfile[]> => {
  * @param userData The data for the new user.
  */
 const apiCreateUser = async (userData: { username: string, password: string, profileData: Omit<UserProfile, 'id'> }) => {
+    // The Edge Function likely expects a flat object, not a nested one.
+    // We'll flatten the payload here before sending.
+    const payload = {
+        username: userData.username,
+        password: userData.password,
+        ...userData.profileData,
+    };
+
     const { data, error } = await supabase.functions.invoke('create-user', {
-        body: userData,
+        body: payload,
     });
 
     if (error) throw error;
