@@ -5,16 +5,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import jsPDF from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
-import 'jspdf-autotable';
-declare module 'jspdf' {
-    interface jsPDF {
-        autoTable: (options: any) => jsPDF;
-        lastAutoTable: { finalY: number };
-    }
-}
+
 // --- Supabase Setup ---
-const SUPABASE_URL = "https://obykeczhieefcpeixgiv.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ieWtlY3poaWVlZmNwZWl4Z2l2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTkwNjEwMzYsImV4cCI6MTczNDcxMzAzNn0.77R8x9mO2xP1JdO4gq69vL_zY95gXwY6V0xX_z0D0w";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // --- User Profile Type Definition ---
 interface UserProfile {
@@ -889,6 +883,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!patientData.dischargeTimestamp) {
                     patientData.dischargeTimestamp = Date.now();
                     await apiSavePatient(dni, patientData);
+                    alert('Alta generada exitosamente. Este registro se bloqueará para edición en 24 horas.');
                 }
             } catch (error) {
                 console.error('Failed to set discharge timestamp', error);
@@ -896,231 +891,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     };
-    
-    const margin = 15;
-    const fieldMargin = 45;
-    const lineSpacing = 8;
-    const pageWidth = 210;
-    const pageHeight = 297;
-    const logoY = 20;
-    const logoRadius = 7;
-    
-    const drawHeader = (pdf: jsPDF) => {
-        pdf.setFontSize(16);
-        const titleText = 'CLINICA DEL SOL';
-        const titleWidth = pdf.getTextWidth(titleText);
-        const logoWidth = logoRadius*2 ;
-        const gap = 8;
-        const totalWidth = logoWidth + gap + titleWidth;
-        const startX = (pageWidth - totalWidth) / 2;
-        const logoX = startX + logoRadius;
-        const textX = startX + logoWidth + gap;
-        pdf.setFillColor(56, 186, 234);
-        pdf.circle(logoX, logoY, logoRadius, 'F');
-        pdf.setDrawColor(255, 255, 255);
-        pdf.setLineWidth(1.5);
-        const crossSize = logoRadius * 0.5;
-        pdf.line(logoX, logoY - crossSize, logoX, logoY + crossSize);
-        pdf.line(logoX + crossSize, logoY, logoX + crossSize, logoY);
-        pdf.setFontSize(16);
-        pdf.setTextColor(0, 174, 239);
-        pdf.text(titleText, textX, logoY, { baseline: 'middle' });
-        pdf.setFontSize(10);
-        pdf.setTextColor(101, 119, 134);
-        pdf.text('CLINICA PRIVADA', textX, logoY + 7);
-        const headerBottomY = logoY + logoRadius + 8;
-        pdf.setDrawColor(225, 232, 237);
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, headerBottomY, pageWidth - margin, headerBottomY);
-        pdf.setDrawColor(0,0,0);
-        pdf.setTextColor(0,0,0);
-        pdf.setLineWidth(0.2);
-    };
-
-    const drawField = (pdf: jsPDF, label: string, value: string, yPos: number, xStart: number = margin, xValStart?: number) => {
-        pdf.text(label, xStart, yPos);
-        pdf.text(value, xValStart || (xStart + fieldMargin), yPos);
-    };
-    
-    const drawTextArea = (pdf: jsPDF, label: string, textContent: string, startY: number, numLines: number) => {
-        pdf.text(label, margin, startY);
-        pdf.setLineDashPattern([1, 1], 0);
-        let lineY = startY + 4;
-        const lineHeight = 5;
-        const lines = pdf.splitTextToSize(textContent, pageWidth - margin * 2);
-        
-        for (let i = 0; i < numLines; i++) {
-            const middleY = lineY + lineHeight / 2;
-            if (i < lines.length) {
-                pdf.text(lines[i], margin, middleY, { baseline: 'middle' });
-            }
-            pdf.line(margin, lineY, pageWidth - margin, lineY);
-            lineY += lineHeight;
-        }
-        pdf.setLineDashPattern([], 0);
-        return lineY + 4;
-    };
-    
-    const drawUserSignature = (pdf: jsPDF, user: UserProfile) => {
-        const signatureY = pageHeight - 25;
-        const signatureXStart = pageWidth - margin - 70;
-        pdf.setDrawColor(150);
-        pdf.line(signatureXStart, signatureY, pageWidth - margin, signatureY);
-        if (user.firma) {
-            try {
-                const signatureWidth = 35;
-                const signatureHeight = 12;
-                pdf.addImage(user.firma, 'PNG', signatureXStart + 5, signatureY - signatureHeight, signatureWidth, signatureHeight);
-            } catch (e) {
-                console.error("Could not add signature image to PDF", e);
-            }
-        }
-        pdf.setFontSize(8).setTextColor(100);
-        const signatureText = `${user.nombre} ${user.apellido}`;
-        const specialtyText = `(${user.especialidad})`;
-        pdf.text(signatureText, signatureXStart, signatureY + 4);
-        pdf.text(specialtyText, signatureXStart, signatureY + 8);
-        pdf.setFontSize(10).setTextColor(0,0,0);
-        pdf.setDrawColor(0);
-    };
-    
-    const generateAndRenderPage = (
-        pdf: jsPDF,
-        patientData: any,
-        title: string,
-        fields: { label: string, key: string }[],
-        textAreas: { label: string, key: string, lines: number }[],
-        tableData?: { tableName: string, key: string, columns: string[], rowsMap: (row: any) => any[] }[],
-    ) => {
-        pdf.addPage();
-        drawHeader(pdf);
-        let y = 45;
-        pdf.setFontSize(14).text(title, pageWidth / 2, y, { align: 'center' });
-        y += lineSpacing * 3;
-        pdf.setFontSize(10).setTextColor(0,0,0);
-
-        fields.forEach(field => {
-            drawField(pdf, field.label, patientData[field.key] || '', y);
-            y += lineSpacing;
-        });
-
-        if (fields.length > 0) y += lineSpacing;
-
-        textAreas.forEach(area => {
-            const textContent = patientData[area.key] || '';
-            y = drawTextArea(pdf, area.label, textContent, y, area.lines);
-        });
-
-        if (tableData) {
-            tableData.forEach(table => {
-                pdf.setFontSize(10).text(table.tableName, margin, y);
-                y += lineSpacing;
-                (pdf as any).autoTable({
-                    startY: y,
-                    head: [table.columns],
-                    body: (patientData[table.key] || []).map(table.rowsMap),
-                    theme: 'grid',
-                    styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-                    headStyles: { fillColor: [200, 200, 200], textColor: [0, 0, 0] },
-                    margin: { left: margin, right: margin, bottom: margin },
-                    didDrawPage: (data: any) => {
-                        drawHeader(pdf);
-                    }
-                });
-                y = (pdf as any).lastAutoTable.finalY + lineSpacing;
-            });
-        }
-        
-        drawUserSignature(pdf, getCurrentUser()!);
-    };
-    
-    const generateMedicalDischarge = (pdf: jsPDF, patientData: any, user: UserProfile) => {
-        const patientName = patientData.hemodinamia?.apellido && patientData.hemodinamia?.nombres ?
-            `${patientData.hemodinamia.apellido.toUpperCase()}, ${patientData.hemodinamia.nombres}` :
-            '';
-        
-        pdf.addPage();
-        drawHeader(pdf);
-        let y = 45;
-        pdf.setFontSize(14).text('ALTA MEDICA', pdf.internal.pageSize.getWidth() / 2, y, { align: 'center' });
-        y += lineSpacing * 3;
-        pdf.setFontSize(10).setTextColor(0,0,0);
-        drawField(pdf, 'PACIENTE:', patientName, y);
-        drawField(pdf, 'DNI:', patientData.hemodinamia?.dni, y, 115, 140);
-        y += lineSpacing;
-        drawField(pdf, 'FECHA DE ALTA:', patientData.dischargeTimestamp ? new Date(patientData.dischargeTimestamp).toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '', y);
-        
-        y += lineSpacing * 2;
-        drawTextArea(pdf, 'EPICRISIS:', patientData.evolucion?.epicrisis || '', y, 10);
-        
-        y += lineSpacing;
-        drawTextArea(pdf, 'Recomendaciones y Prescripciones:', patientData['cirugia-anestesia']?.prescripciones_alta || '', y, 5);
-
-        y += lineSpacing * 2;
-        pdf.text('Recibe el paciente de conformidad:', margin, y);
-        y += lineSpacing;
-        pdf.line(margin, y, margin + 70, y);
-        pdf.text('Firma', margin + 30, y + 4, { align: 'center' });
-        
-        drawUserSignature(pdf, user);
-    };
-    
-    const generateGeneralReport = (pdf: jsPDF, patientData: any, user: UserProfile) => {
-        pdf.addPage();
-        drawHeader(pdf);
-        
-        let y = 45;
-        pdf.setFontSize(14).text('REPORTE MEDICO GENERAL', pdf.internal.pageSize.getWidth() / 2, y, { align: 'center' });
-        y += lineSpacing * 3;
-        
-        const patientName = patientData.hemodinamia?.apellido && patientData.hemodinamia?.nombres ?
-            `${patientData.hemodinamia.apellido.toUpperCase()}, ${patientData.hemodinamia.nombres}` :
-            '';
-        
-        pdf.setFontSize(10);
-        drawField(pdf, 'PACIENTE:', patientName, y);
-        drawField(pdf, 'DNI:', patientData.hemodinamia?.dni, y, 115, 140);
-        y += lineSpacing;
-        drawField(pdf, 'FECHA DE INGRESO:', patientData.hemodinamia?.ingreso, y);
-        drawField(pdf, 'FECHA DE EGRESO:', patientData.dischargeTimestamp ? new Date(patientData.dischargeTimestamp).toLocaleDateString('es-ES') : 'N/A', y, 115, 140);
-
-        y += lineSpacing * 2;
-        pdf.setFontSize(12).text('Datos de Paciente', margin, y);
-        y += lineSpacing;
-        drawField(pdf, 'Edad:', patientData.hemodinamia?.edad, y);
-        drawField(pdf, 'Sexo:', patientData.hemodinamia?.sexo, y, 115, 140);
-        y += lineSpacing;
-        drawField(pdf, 'Obra Social:', patientData.hemodinamia?.obraSocial, y);
-        drawField(pdf, 'Médico de Cabecera:', patientData.hemodinamia?.medicoCabecera, y, 115, 140);
-        
-        y += lineSpacing * 2;
-        pdf.setFontSize(12).text('Síntesis del Caso', margin, y);
-        y += lineSpacing;
-        drawTextArea(pdf, '', patientData.hemodinamia?.sintesisCaso || '', y, 5);
-        
-        if (patientData.evolucion) {
-            pdf.addPage();
-            drawHeader(pdf);
-            let pageY = 45;
-            pdf.setFontSize(12).text('Evolución y Notas', margin, pageY);
-            pageY += lineSpacing;
-            drawTextArea(pdf, '', patientData.evolucion.evolucion_notas || '', pageY, 15);
-        }
-
-        if (patientData['cirugia-anestesia']?.prescripciones) {
-            pdf.addPage();
-            drawHeader(pdf);
-            let pageY = 45;
-            pdf.setFontSize(12).text('Prescripciones', margin, pageY);
-            pageY += lineSpacing;
-            drawTextArea(pdf, '', patientData['cirugia-anestesia']?.prescripciones || '', pageY, 15);
-        }
-
-        drawUserSignature(pdf, user);
-    };
 
     generateAltaBtn?.addEventListener('click', async () => {
         const btn = generateAltaBtn as HTMLButtonElement;
+        
         const activeContent = document.querySelector('.tab-content.active');
         const form = activeContent?.querySelector('form');
         if (!form || !form.checkValidity()) {
@@ -1132,176 +906,1048 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalButtonText = btn.textContent;
         btn.textContent = 'Generando...';
         btn.disabled = true;
-
+        
         const user = getCurrentUser();
+
         try {
             if (!activeContent || !user) {
                 throw new Error("No active tab content found or user not logged in");
             }
             
-            const dniInput = activeContent.querySelector('input[id$="-dni"]') as HTMLInputElement;
-            const dni = dniInput.value.trim();
-
-            if (!dni) {
-                throw new Error('No se puede generar el PDF sin un DNI de paciente.');
-            }
-
-            const patientData = await apiGetPatientByDni(dni);
-
-            if (!patientData) {
-                throw new Error('No se encontraron datos para el paciente para generar el PDF.');
-            }
-
             const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const margin = 15;
+            const fieldMargin = 45;
+            const lineSpacing = 8;
+            let y = 0;
+
+            const drawHeader = () => {
+                const logoY = 20;
+                const logoRadius = 7;
+                pdf.setFontSize(16);
+                const titleText = 'CLINICA DEL SOL';
+                const titleWidth = pdf.getTextWidth(titleText);
+                const logoWidth = logoRadius*2 ;
+                const gap = 8;
+                const totalWidth = logoWidth + gap + titleWidth;
+                const startX = (pageWidth - totalWidth) / 2;
+                const logoX = startX + logoRadius;
+                const textX = startX + logoWidth + gap;
+                pdf.setFillColor(56, 186, 234);
+                pdf.circle(logoX, logoY, logoRadius, 'F');
+                pdf.setDrawColor(255, 255, 255);
+                pdf.setLineWidth(1.5);
+                const crossSize = logoRadius * 0.5;
+                pdf.line(logoX, logoY - crossSize, logoX, logoY + crossSize);
+                pdf.line(logoX - crossSize, logoY, logoX + crossSize, logoY);
+                pdf.setFontSize(16);
+                pdf.setTextColor(0, 174, 239);
+                pdf.text(titleText, textX, logoY, { baseline: 'middle' });
+                pdf.setFontSize(10);
+                pdf.setTextColor(101, 119, 134);
+                pdf.text('CLINICA PRIVADA', textX, logoY + 7);
+                const headerBottomY = logoY + logoRadius + 8;
+                pdf.setDrawColor(225, 232, 237);
+                pdf.setLineWidth(0.5);
+                pdf.line(margin, headerBottomY, pageWidth - margin, headerBottomY);
+                pdf.setDrawColor(0,0,0);
+                pdf.setTextColor(0,0,0);
+                pdf.setLineWidth(0.2); 
+            };
+            const drawField = (label: string, value: string, yPos: number, xStart: number = margin, xValStart?: number) => {
+                pdf.text(label, xStart, yPos);
+                pdf.text(value, xValStart || (xStart + fieldMargin), yPos);
+            };
+            const drawCenteredField = (label: string, value: string, yPos: number) => {
+                pdf.setFontSize(10);
+                const gap = 4;
+                const labelWidth = pdf.getTextWidth(label);
+                const labelX = (pageWidth / 2) - (gap / 2) - labelWidth;
+                const valueX = (pageWidth / 2) + (gap / 2);
+                pdf.text(label, labelX, yPos);
+                pdf.text(value, valueX, yPos);
+            };
+            const drawTextArea = (label: string, textContent: string[], startY: number, numLines: number) => {
+                pdf.text(label, margin, startY);
+                pdf.setLineDashPattern([1, 1], 0);
+                let lineY = startY + 4;
+                const lineHeight = 5;
+                for (let i = 0; i < numLines; i++) {
+                    const middleY = lineY + lineHeight / 2;
+                    if (i < textContent.length) {
+                        pdf.text(textContent[i], margin, middleY, { baseline: 'middle', maxWidth: pageWidth - margin * 2 });
+                    }
+                    pdf.line(margin, lineY, pageWidth - margin, lineY);
+                    lineY += lineHeight;
+                }
+                pdf.setLineDashPattern([], 0);
+                return lineY + 4;
+            };
+            const drawUserSignature = () => {
+                const loggedInUser = getCurrentUser();
+                if (loggedInUser) {
+                    const signatureY = pageHeight - 25;
+                    const signatureXStart = pageWidth - margin - 70;
+                    pdf.setDrawColor(150);
+                    pdf.line(signatureXStart, signatureY, pageWidth - margin, signatureY);
             
-            // --- Patient Information Tab ---
-            if (patientData.hemodinamia) {
-                generateAndRenderPage(
-                    pdf,
-                    patientData.hemodinamia,
-                    'REPORTE DE HEMODINAMIA',
-                    [
-                        { label: 'PACIENTE:', key: 'nombres' },
-                        { label: 'DNI:', key: 'dni' },
-                        { label: 'FECHA DE INGRESO:', key: 'ingreso' },
-                        { label: 'EDAD:', key: 'edad' },
-                        { label: 'SEXO:', key: 'sexo' },
-                        { label: 'DIAGNOSTICO:', key: 'diagnostico' },
-                        { label: 'ESTUDIOS:', key: 'estudios' },
-                        { label: 'TIPO DE PACIENTE:', key: 'tipoPaciente' }
-                    ],
-                    [
-                        { label: 'SÍNTESIS DEL CASO:', key: 'sintesisCaso', lines: 10 }
-                    ]
-                );
-            }
-            
-            // --- Endoscopic Group Tab ---
-            if (patientData['grupo-endoscopico']) {
-                generateAndRenderPage(
-                    pdf,
-                    patientData['grupo-endoscopico'],
-                    'GRUPO ENDOSCOPICO',
-                    [
-                        { label: 'PACIENTE:', key: 'nombres' },
-                        { label: 'DNI:', key: 'dni' },
-                        { label: 'FECHA:', key: 'fecha' },
-                        { label: 'ESTUDIO:', key: 'estudio' },
-                        { label: 'MEDICACION:', key: 'medicacion' },
-                    ],
-                    [
-                        { label: 'SÍNTESIS DEL CASO:', key: 'sintesis', lines: 10 }
-                    ]
-                );
-            }
-            
-            // --- Surgeries Tab ---
-            if (patientData.cirugias) {
-                generateAndRenderPage(
-                    pdf,
-                    patientData.cirugias,
-                    'CIRUGIAS Y PROCEDIMIENTOS',
-                    [
-                        { label: 'PACIENTE:', key: 'nombres' },
-                        { label: 'DNI:', key: 'dni' },
-                        { label: 'FECHA:', key: 'fecha' },
-                        { label: 'DIAGNOSTICO:', key: 'diagnostico' },
-                        { label: 'PROCEDIMIENTO:', key: 'procedimiento' }
-                    ],
-                    [
-                        { label: 'SÍNTESIS Y HALLAZGOS:', key: 'sintesis', lines: 10 }
-                    ]
-                );
-            }
-            
-            // --- Anesthesia & Discharge Tab ---
-            if (patientData['cirugia-anestesia']) {
-                generateAndRenderPage(
-                    pdf,
-                    patientData['cirugia-anestesia'],
-                    'PROTOCOLO DE ANESTESIA Y EVOLUCIÓN',
-                    [
-                        { label: 'PACIENTE:', key: 'nombres' },
-                        { label: 'DNI:', key: 'dni' },
-                        { label: 'FECHA:', key: 'fecha' },
-                        { label: 'ANESTESIA:', key: 'anestesia' },
-                        { label: 'PROCEDIMIENTO:', key: 'procedimiento' },
-                        { label: 'DIAGNOSTICO:', key: 'diagnostico' },
-                    ],
-                    [
-                        { label: 'EVOLUCIÓN Y OBSERVACIONES:', key: 'evolucion', lines: 10 }
-                    ],
-                    [
-                        {
-                            tableName: 'Monitoreo intraoperatorio',
-                            key: 'monitoreo',
-                            columns: ['Hora', 'Sistólica', 'Diastólica', 'Pulso'],
-                            rowsMap: (row: any) => [row['Monitoreo Hora'], row['Monitoreo Sistolica'], row['Monitoreo Diastolica'], row['Monitoreo Pulso']]
-                        },
-                        {
-                            tableName: 'Prescripciones',
-                            key: 'prescripciones',
-                            columns: ['Fecha', 'Indicaciones'],
-                            rowsMap: (row: any) => [row['Prescripcion Fecha'], row['Prescripcion Indicaciones']]
+                    if (loggedInUser.firma) {
+                        try {
+                            const signatureWidth = 35;
+                            const signatureHeight = 12;
+                            pdf.addImage(loggedInUser.firma, 'PNG', signatureXStart + 5, signatureY - signatureHeight, signatureWidth, signatureHeight);
+                        } catch (e) {
+                            console.error("Could not add signature image to PDF", e);
                         }
-                    ],
-                );
+                    }
+            
+                    pdf.setFontSize(8).setTextColor(100);
+                    const signatureText = `${loggedInUser.nombre} ${loggedInUser.apellido}`;
+                    const specialtyText = `(${loggedInUser.especialidad})`;
+                    
+                    pdf.text(signatureText, signatureXStart, signatureY + 4);
+                    pdf.text(specialtyText, signatureXStart, signatureY + 8);
+                    
+                    pdf.setFontSize(10).setTextColor(0,0,0);
+                    pdf.setDrawColor(0);
+                }
+            };
+            const drawMedicalDischargePage = (patientName: string, patientDNI: string) => {
+                pdf.addPage();
+                drawHeader();
+                let y = 45;
+
+                pdf.setFontSize(14).text('ALTA MEDICA', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                drawField('PACIENTE:', patientName, y);
+                drawField('DNI:', patientDNI, y, 115, 140);
+                y += lineSpacing;
+                drawField('FECHA DE ALTA:', new Date().toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' }), y);
+                y += lineSpacing * 2;
+
+                const dischargeText = "Se otorga el alta médica al paciente, con indicación de continuar tratamiento y seguimiento de forma ambulatoria según las siguientes indicaciones:";
+                const splitText = pdf.splitTextToSize(dischargeText, pageWidth - margin * 2);
+                pdf.text(splitText, margin, y);
+                y += splitText.length * 4 + lineSpacing;
                 
-                if (patientData['cirugia-anestesia']?.escaneado_alta) {
+                y = drawTextArea('INDICACIONES:', [], y, 15);
+                
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
+                    drawUserSignature();
+                } else {
+                    const signatureY = pageHeight - 40;
+                    const signatureXStart = pageWidth - margin - 80;
+                    pdf.setDrawColor(0);
+                    pdf.line(signatureXStart, signatureY, pageWidth - margin, signatureY);
+                    pdf.setFontSize(8).setTextColor(100);
+                    pdf.text("Firma y Sello del Médico Responsable", signatureXStart, signatureY + 4);
+                }
+            };
+
+            // --- Conditional PDF Generation ---
+            if (activeContent.id === 'hemodinamia') {
+                const prefix = 'hd-';
+                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
+                const getTextAreaValue = (id: string) => {
+                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
+                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
+                };
+                
+                // --- PAGE 1 ---
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                drawField('MEDICO:', getValue('medico'), y);
+                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
+                y += lineSpacing;
+                drawField('APELLIDO:', getValue('apellido'), y);
+                drawField('EDAD:', getValue('edad'), y, 115, 140);
+                y += lineSpacing;
+                drawField('NOMBRES:', getValue('nombres'), y);
+                drawField('DNI:', getValue('dni'), y, 115, 140);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('domicilio'), y);
+                y += lineSpacing;
+                drawField('TELEFONO:', getValue('telefono'), y);
+                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
+                y += lineSpacing;
+                drawField('COB SOCIAL:', getValue('cob-social'), y);
+                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
+                y += lineSpacing;
+                drawField('CONDICION AL IVA:', getValue('iva'), y);
+                y = 135;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                pdf.setFontSize(10);
+                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
+                y += lineSpacing;
+                drawField('TEL:', getValue('fam-tel'), y);
+                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
+                y = 220;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 2;
+                pdf.setFontSize(10);
+                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
+                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
+                y += lineSpacing;
+                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
+                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
+                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 2 ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                drawField('PACIENTE:', getValue('paciente-2'), y);
+                drawField('HC:', getValue('hc-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('SERVICIO:', getValue('servicio'), y);
+                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('HABITACION:', getValue('habitacion'), y);
+                drawField('CAMA:', getValue('cama'), y, 115, 140);
+                y += lineSpacing * 2;
+                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
+                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
+                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
+                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
+                y += lineSpacing;
+                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing;
+                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
+                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 3 ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
+                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
+                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
+                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
+                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
+                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
+                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
+                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 4 ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                pdf.setFontSize(14).text('PARTE QUIRURGICO HOJA 2', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawCenteredField('PACIENTE:', getValue('paciente-4'), y);
+                y += lineSpacing;
+                drawTextArea('', getTextAreaValue('reporte-quirurgico'), y, 25);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 5 ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                pdf.setFontSize(12).text('PRACTICAS MEDICAS', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawCenteredField('PACIENTE:', getValue('paciente-5'), y);
+                y += lineSpacing;
+                drawCenteredField('MEDICO DE CABECERA:', getValue('medico-cabecera'), y);
+                y += lineSpacing;
+                const practicasHeaders = ["Fecha", "Código", "Descripción", "Cant.", "Observación"];
+                const practicasColWidths = [30, 20, 50, 15, 70];
+                const practicasTableBody = activeContent.querySelector('.practicas-medicas-table tbody');
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                pdf.rect(margin, y, pageWidth - margin * 2, 8);
+                let currentX = margin;
+                for(let i = 0; i < practicasHeaders.length; i++) {
+                    pdf.text(practicasHeaders[i], currentX + 2, y + 4, { baseline: 'middle' });
+                    currentX += practicasColWidths[i];
+                    if (i < practicasHeaders.length - 1) pdf.line(currentX, y, currentX, y + 23 * 8);
+                }
+                y += 8;
+                const practicasRows = practicasTableBody?.querySelectorAll('tr');
+                for(let i = 0; i < 22; i++) {
+                    pdf.rect(margin, y, pageWidth - margin * 2, 8);
+                    if (practicasRows && i < practicasRows.length) {
+                        const cells = practicasRows[i].querySelectorAll('input');
+                        currentX = margin;
+                        for(let j = 0; j < cells.length; j++) {
+                            pdf.text(cells[j].value, currentX + 2, y + 4, { baseline: 'middle', maxWidth: practicasColWidths[j] - 4 });
+                            currentX += practicasColWidths[j];
+                        }
+                    }
+                    y += 8;
+                }
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 6 ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                pdf.setFontSize(12).text('CONTROL DE ENFERMERIA', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawCenteredField('PACIENTE:', getValue('paciente-6'), y);
+                y += lineSpacing;
+                const enfermeriaHeaders = ["Fecha", "Hora", "T.A.", "F.C.", "F.R.", "Temp.", "Observaciones"];
+                const enfermeriaColWidths = [30, 15, 15, 15, 15, 15, 75];
+                const enfermeriaTableBody = activeContent.querySelector('.enfermeria-table tbody');
+                pdf.rect(margin, y, pageWidth - margin * 2, 8);
+                currentX = margin;
+                for(let i = 0; i < enfermeriaHeaders.length; i++) {
+                    pdf.text(enfermeriaHeaders[i], currentX + 2, y + 4, { baseline: 'middle' });
+                    currentX += enfermeriaColWidths[i];
+                     if (i < enfermeriaHeaders.length - 1) pdf.line(currentX, y, currentX, y + 17 * 12);
+                }
+                y += 8;
+                const enfermeriaRows = enfermeriaTableBody?.querySelectorAll('tr');
+                for(let i = 0; i < 16; i++) {
+                     pdf.rect(margin, y, pageWidth - margin * 2, 12);
+                     if(enfermeriaRows && i < enfermeriaRows.length) {
+                        const cells = enfermeriaRows[i].querySelectorAll('input');
+                        currentX = margin;
+                        for(let j = 0; j < cells.length; j++) {
+                            pdf.text(cells[j].value, currentX + 2, y + 6, { baseline: 'middle', maxWidth: enfermeriaColWidths[j] - 4 });
+                            currentX += enfermeriaColWidths[j];
+                        }
+                     }
+                     y += 12;
+                }
+                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
+                const patientDNI = getValue('dni');
+                drawMedicalDischargePage(patientName, patientDNI);
+                
+                pdf.save(`hemodinamia-${getValue('apellido')}-${getValue('dni')}.pdf`);
+                await setDischargeTimestamp();
+
+            } else if (activeContent.id === 'grupo-endoscopico') {
+                const prefix = 'ge-';
+                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
+                const getTextAreaValue = (id: string) => {
+                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
+                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
+                };
+
+                // --- PAGE 1 (Same as Hemodinamia) ---
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                drawField('MEDICO:', getValue('medico'), y);
+                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
+                y += lineSpacing;
+                drawField('APELLIDO:', getValue('apellido'), y);
+                drawField('EDAD:', getValue('edad'), y, 115, 140);
+                y += lineSpacing;
+                drawField('NOMBRES:', getValue('nombres'), y);
+                drawField('DNI:', getValue('dni'), y, 115, 140);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('domicilio'), y);
+                y += lineSpacing;
+                drawField('TELEFONO:', getValue('telefono'), y);
+                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
+                y += lineSpacing;
+                drawField('COB SOCIAL:', getValue('cob-social'), y);
+                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
+                y += lineSpacing;
+                drawField('CONDICION AL IVA:', getValue('iva'), y);
+                y = 135;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                pdf.setFontSize(10);
+                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
+                y += lineSpacing;
+                drawField('TEL:', getValue('fam-tel'), y);
+                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
+                y = 220;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 2;
+                pdf.setFontSize(10);
+                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
+                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
+                y += lineSpacing;
+                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
+                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
+                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 2 (Same as Hemodinamia) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                drawField('PACIENTE:', getValue('paciente-2'), y);
+                drawField('HC:', getValue('hc-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('SERVICIO:', getValue('servicio'), y);
+                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('HABITACION:', getValue('habitacion'), y);
+                drawField('CAMA:', getValue('cama'), y, 115, 140);
+                y += lineSpacing * 2;
+                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
+                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
+                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
+                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
+                y += lineSpacing;
+                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing;
+                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
+                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 3 (Same as Hemodinamia) ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
+                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
+                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
+                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
+                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
+                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
+                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
+                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 4 (Evolucion) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('EVOLUCION', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                pdf.rect(margin, y, pageWidth - margin * 2, 10);
+                drawField('PACIENTE:', getValue('paciente-evolucion'), y + 6, margin + 2, margin + 22);
+                y += 10;
+                const evolucionText = getTextAreaValue('evolucion-notas');
+                const lineHeight = 10;
+                const numLines = 22;
+                for (let i = 0; i < numLines; i++) {
+                    pdf.rect(margin, y, pageWidth - margin * 2, lineHeight);
+                    if (i < evolucionText.length) {
+                        pdf.text(evolucionText[i], margin + 2, y + lineHeight / 2 + 1, { baseline: 'middle', maxWidth: pageWidth - (margin * 2) - 4 });
+                    }
+                    y += lineHeight;
+                }
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 5 (Report) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('REPORT', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for patient
+                drawField('PACIENTE:', getValue('paciente-report'), y + 6, margin + 2, margin + 22);
+                y += 10;
+                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for date, sala, cama
+                drawField('FECHA:', getValue('fecha-report'), y + 6, margin + 2, margin + 18);
+                drawField('SALA:', getValue('sala-report'), y + 6, pageWidth / 2 - 20, pageWidth / 2 - 8);
+                drawField('CAMA:', getValue('cama-report'), y + 6, pageWidth / 2 + 50, pageWidth / 2 + 65);
+                y += 15;
+                const reportContent = getTextAreaValue('report-contenido');
+                pdf.setLineDashPattern([1, 1], 0);
+                let lineY = y;
+                const reportLineHeight = 8;
+                const reportNumLines = 25;
+                for(let i = 0; i < reportNumLines; i++) {
+                    if (i < reportContent.length) {
+                        pdf.text(reportContent[i], margin, lineY, { baseline: 'middle', maxWidth: pageWidth - margin * 2 });
+                    }
+                    pdf.line(margin, lineY, pageWidth - margin, lineY);
+                    lineY += reportLineHeight;
+                }
+                pdf.setLineDashPattern([], 0);
+                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
+                const patientDNI = getValue('dni');
+                drawMedicalDischargePage(patientName, patientDNI);
+
+                pdf.save(`grupo-endoscopico-${getValue('apellido')}-${getValue('dni')}.pdf`);
+                await setDischargeTimestamp();
+
+            } else if (activeContent.id === 'cirugias') {
+                const prefix = 'cg-';
+                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
+                const getTextAreaValue = (id: string) => {
+                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
+                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
+                };
+
+                // --- PAGE 1 (Standard) ---
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                drawField('MEDICO:', getValue('medico'), y);
+                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
+                y += lineSpacing;
+                drawField('APELLIDO:', getValue('apellido'), y);
+                drawField('EDAD:', getValue('edad'), y, 115, 140);
+                y += lineSpacing;
+                drawField('NOMBRES:', getValue('nombres'), y);
+                drawField('DNI:', getValue('dni'), y, 115, 140);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('domicilio'), y);
+                y += lineSpacing;
+                drawField('TELEFONO:', getValue('telefono'), y);
+                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
+                y += lineSpacing;
+                drawField('COB SOCIAL:', getValue('cob-social'), y);
+                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
+                y += lineSpacing;
+                drawField('CONDICION AL IVA:', getValue('iva'), y);
+                y = 135;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                pdf.setFontSize(10);
+                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
+                y += lineSpacing;
+                drawField('TEL:', getValue('fam-tel'), y);
+                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
+                y = 220;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 2;
+                pdf.setFontSize(10);
+                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
+                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
+                y += lineSpacing;
+                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
+                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
+                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 2 (Standard) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                drawField('PACIENTE:', getValue('paciente-2'), y);
+                drawField('HC:', getValue('hc-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('SERVICIO:', getValue('servicio'), y);
+                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('HABITACION:', getValue('habitacion'), y);
+                drawField('CAMA:', getValue('cama'), y, 115, 140);
+                y += lineSpacing * 2;
+                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
+                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
+                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
+                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
+                y += lineSpacing;
+                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing;
+                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
+                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 3 (Standard) ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
+                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
+                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
+                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
+                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
+                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
+                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
+                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 4 (Parte Quirurgico) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('PARTE QUIRURGICO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 1;
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                
+                // Top Box
+                pdf.rect(margin, y, pageWidth - margin * 2, 20);
+                const contentWidth = pageWidth - margin * 2;
+                const firstDividerX = margin + contentWidth *1.5 / 3;
+                const secondDividerX = firstDividerX + (contentWidth / 1.7) / 2;
+
+                // Vertical dividers
+                pdf.line(firstDividerX, y, firstDividerX, y + 20);
+                pdf.line(secondDividerX, y, secondDividerX, y + 20);
+                // Horizontal divider
+                pdf.line(margin, y + 10, pageWidth - margin, y + 10);
+                
+                // Fields in the box - Corrected Alignment
+                drawField('PACIENTE:', getValue('paciente-4'), y + 6, margin + 2, margin + 30);
+                drawField('GRUPO:', getValue('grupo'), y + 6, firstDividerX + 2, firstDividerX + 23);
+                drawField('RH:', getValue('rh'), y + 6, secondDividerX + 2, secondDividerX + 17);
+                
+                drawField('SERVICIO:', getValue('servicio-4'), y + 16, margin + 2, margin + 30);
+                drawField('HAB:', getValue('hab-4'), y + 16, firstDividerX + 2, firstDividerX + 18);
+                drawField('CAMA:', getValue('cama-4'), y + 16, secondDividerX + 2, secondDividerX + 20);
+
+                y += lineSpacing * 1;
+                y += 25;
+                drawField('FECHA CIRUGIA:', getValue('fecha-cirugia'), y);
+                drawField('HORA:', getValue('hora-cirugia'), y, 115, 140);
+                y += lineSpacing;
+                drawField('CIRUJANO:', getValue('cirujano'), y);
+                y += lineSpacing;
+                drawField('AYUDANTE 1:', getValue('ayudante1'), y);
+                drawField('AYUDANTE 2:', getValue('ayudante2'), y, 115, 150);
+                y += lineSpacing;
+                drawField('PEDIATRA:', getValue('pediatra'), y);
+                drawField('ANESTESISTA:', getValue('anestesista'), y, 115, 155);
+                y += lineSpacing * 1.5;
+
+                y = drawTextArea('DIAGNOSTICO PREOPERATORIO:', getTextAreaValue('diagnostico-preop'), y, 4);
+                y = drawTextArea('OPERACIÓN PRACTICADA:', getTextAreaValue('operacion-practicada'), y, 4);
+                drawTextArea('DETALLES DE LA TECNICA:', getTextAreaValue('detalles-tecnica'), y, 8);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 5 (Parte Quirurgico Hoja 2) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('PARTE QUIRURGICO HOJA 2', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawField('PACIENTE:', getValue('paciente-5'), y);
+                y += lineSpacing * 1.5;
+                drawTextArea('', getTextAreaValue('detalles-quirurgico-2'), y, 38);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 6 (Evolucion) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('EVOLUCION', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                pdf.rect(margin, y, pageWidth - margin * 2, 10);
+                drawField('PACIENTE:', getValue('paciente-evolucion'), y + 6, margin + 2, margin +29);
+                y += 10;
+                const evolucionTextCG = getTextAreaValue('evolucion-notas');
+                const lineHeightCG = 10;
+                const numLinesCG = 22;
+                for (let i = 0; i < numLinesCG; i++) {
+                    pdf.rect(margin, y, pageWidth - margin * 2, lineHeightCG);
+                    if (i < evolucionTextCG.length) {
+                        pdf.text(evolucionTextCG[i], margin + 2, y + lineHeightCG / 2 + 1, { baseline: 'middle', maxWidth: pageWidth - (margin * 2) - 4 });
+                    }
+                    y += lineHeightCG;
+                }
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
+                const patientDNI = getValue('dni');
+                drawMedicalDischargePage(patientName, patientDNI);
+
+                pdf.save(`cirugias-${getValue('apellido')}-${getValue('dni')}.pdf`);
+                await setDischargeTimestamp();
+
+            } else if (activeContent.id === 'cirugia-anestesia') {
+                const prefix = 'ca-';
+                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '';
+                const getTextAreaValue = (id: string) => {
+                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
+                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
+                };
+                
+                const scannedProtocolInput = document.getElementById('ca-protocolo-escaneado') as HTMLInputElement;
+                const scannedFile = scannedProtocolInput.files ? scannedProtocolInput.files[0] : null;
+
+                // --- PAGE 1 (Standard) ---
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                drawField('MEDICO:', getValue('medico'), y);
+                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
+                y += lineSpacing;
+                drawField('APELLIDO:', getValue('apellido'), y);
+                drawField('EDAD:', getValue('edad'), y, 115, 140);
+                y += lineSpacing;
+                drawField('NOMBRES:', getValue('nombres'), y);
+                drawField('DNI:', getValue('dni'), y, 115, 140);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('domicilio'), y);
+                y += lineSpacing;
+                drawField('TELEFONO:', getValue('telefono'), y);
+                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
+                y += lineSpacing;
+                drawField('COB SOCIAL:', getValue('cob-social'), y);
+                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
+                y += lineSpacing;
+                drawField('CONDICION AL IVA:', getValue('iva'), y);
+                y = 135;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 3;
+                pdf.setFontSize(10);
+                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
+                y += lineSpacing;
+                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
+                y += lineSpacing;
+                drawField('TEL:', getValue('fam-tel'), y);
+                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
+                y = 220;
+                pdf.line(margin, y, pageWidth - margin, y);
+                y += lineSpacing * 2;
+                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 2;
+                pdf.setFontSize(10);
+                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
+                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
+                y += lineSpacing;
+                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
+                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
+                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 2 (Standard) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                drawField('PACIENTE:', getValue('paciente-2'), y);
+                drawField('HC:', getValue('hc-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('SERVICIO:', getValue('servicio'), y);
+                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
+                y += lineSpacing;
+                drawField('HABITACION:', getValue('habitacion'), y);
+                drawField('CAMA:', getValue('cama'), y, 115, 140);
+                y += lineSpacing * 2;
+                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
+                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
+                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
+                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
+                y += lineSpacing;
+                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing;
+                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
+                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 3 (Standard) ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
+                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
+                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
+                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
+                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
+                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
+                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
+                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 4 (Parte Quirurgico) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('PARTE QUIRURGICO', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 1;
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                
+                pdf.rect(margin, y, pageWidth - margin * 2, 20);
+                const contentWidthCA = pageWidth - margin * 2;
+                const firstDividerXCA = margin + contentWidthCA *1.5 / 3;
+                const secondDividerXCA = firstDividerXCA + (contentWidthCA / 1.7) / 2;
+                pdf.line(firstDividerXCA, y, firstDividerXCA, y + 20);
+                pdf.line(secondDividerXCA, y, secondDividerXCA, y + 20);
+                pdf.line(margin, y + 10, pageWidth - margin, y + 10);
+                drawField('PACIENTE:', getValue('paciente-4'), y + 6, margin + 2, margin + 30);
+                drawField('GRUPO:', getValue('grupo'), y + 6, firstDividerXCA + 2, firstDividerXCA + 23);
+                drawField('RH:', getValue('rh'), y + 6, secondDividerXCA + 2, secondDividerXCA + 17);
+                drawField('SERVICIO:', getValue('servicio-4'), y + 16, margin + 2, margin + 30);
+                drawField('HAB:', getValue('hab-4'), y + 16, firstDividerXCA + 2, firstDividerXCA + 18);
+                drawField('CAMA:', getValue('cama-4'), y + 16, secondDividerXCA + 2, secondDividerXCA + 20);
+                y += lineSpacing * 1;
+                y += 25;
+                drawField('FECHA CIRUGIA:', getValue('fecha-cirugia'), y);
+                drawField('HORA:', getValue('hora-cirugia'), y, 115, 140);
+                y += lineSpacing;
+                drawField('CIRUJANO:', getValue('cirujano'), y);
+                y += lineSpacing;
+                drawField('AYUDANTE 1:', getValue('ayudante1'), y);
+                drawField('AYUDANTE 2:', getValue('ayudante2'), y, 115, 150);
+                y += lineSpacing;
+                drawField('PEDIATRA:', getValue('pediatra'), y);
+                drawField('ANESTESISTA:', getValue('anestesista'), y, 115, 155);
+                y += lineSpacing * 1.5;
+
+                y = drawTextArea('DIAGNOSTICO PREOPERATORIO:', getTextAreaValue('diagnostico-preop'), y, 4);
+                y = drawTextArea('OPERACIÓN PRACTICADA:', getTextAreaValue('operacion-practicada'), y, 4);
+                drawTextArea('DETALLES DE LA TECNICA:', getTextAreaValue('detalles-tecnica'), y, 8);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 5 (Parte Quirurgico Hoja 2) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('PARTE QUIRURGICO HOJA 2', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawField('PACIENTE:', getValue('paciente-5'), y);
+                y += lineSpacing * 1.5;
+                drawTextArea('', getTextAreaValue('detalles-quirurgico-2'), y, 38);
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 6 (Anesthesia Protocol Cover) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('PROTOCOLO ANESTÉSICO', pageWidth / 2, y, { align: 'center' });
+                y += lineSpacing * 4;
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                const noteText = "El protocolo anestésico completo, firmado por el especialista, se adjunta en las páginas siguientes.";
+                const splitNote = pdf.splitTextToSize(noteText, pageWidth - margin * 2);
+                pdf.text(splitNote, margin, y);
+                if (user?.especialidad === 'Anestesista' || user?.especialidad === 'Administrador') {
+                    drawUserSignature();
+                }
+
+                // --- PAGE 7 (Evolucion) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('EVOLUCION', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                pdf.rect(margin, y, pageWidth - margin * 2, 10);
+                drawField('PACIENTE:', getValue('paciente-evolucion'), y + 6, margin + 2, margin +29);
+                y += 10;
+                const evolucionTextCA = getTextAreaValue('evolucion-notas');
+                const lineHeightCA = 10;
+                const numLinesCA = 22;
+                for (let i = 0; i < numLinesCA; i++) {
+                    pdf.rect(margin, y, pageWidth - margin * 2, lineHeightCA);
+                    if (i < evolucionTextCA.length) {
+                        pdf.text(evolucionTextCA[i], margin + 2, y + lineHeightCA / 2 + 1, { baseline: 'middle', maxWidth: pageWidth - (margin * 2) - 4 });
+                    }
+                    y += lineHeightCA;
+                }
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 8 (Prescripciones) ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                pdf.setFontSize(12).text('PRESCRIPCIONES MEDICAS', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawField('PACIENTE:', getValue('paciente-presc'), y);
+                y += lineSpacing * 1;
+                const prescripcionesTableBody = activeContent.querySelector('.prescripciones-table tbody');
+                const prescripcionesRows = prescripcionesTableBody?.querySelectorAll('tr');
+                const presCellHeight = 10;
+                pdf.rect(margin, y, 30, presCellHeight);
+                pdf.text('FECHA', margin + 2, y + presCellHeight/2 + 2);
+                pdf.rect(margin + 30, y, pageWidth - margin * 2 - 30, presCellHeight);
+                pdf.text('INDICACIONES', margin + 32, y + presCellHeight/2 + 2);
+                y += presCellHeight;
+                 for(let i = 0; i < 22; i++) {
+                    pdf.rect(margin, y, 30, presCellHeight);
+                    pdf.rect(margin + 30, y, pageWidth - margin * 2 - 30, presCellHeight);
+                    if (prescripcionesRows && i < prescripcionesRows.length) {
+                        const cells = prescripcionesRows[i].querySelectorAll('input');
+                        pdf.text(cells[0].value, margin + 2, y + presCellHeight/2 + 2);
+                        pdf.text(cells[1].value, margin + 32, y + presCellHeight/2 + 2, {maxWidth: pageWidth - margin * 2 - 35});
+                    }
+                    y += presCellHeight;
+                }
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 9 (Prácticas Médicas) ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                pdf.setFontSize(12).text('PRACTICAS MEDICAS', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawField('PACIENTE:', getValue('paciente-practicas'), y);
+                y += lineSpacing;
+                drawField('MEDICO:', getValue('medico-cabecera'), y);
+                y += lineSpacing;
+                const practicasHeadersCA = ["Fecha", "Código", "Descripción", "Cant.", "Observación"];
+                const practicasColWidthsCA = [30, 20, 50, 15, 70];
+                const practicasTableBodyCA = activeContent.querySelector('.practicas-medicas-table tbody');
+                pdf.setDrawColor(0).setLineWidth(0.2);
+                let currentXCA = margin;
+                pdf.rect(margin, y, pageWidth - margin * 2, 8);
+                for(let i = 0; i < practicasHeadersCA.length; i++) {
+                    pdf.text(practicasHeadersCA[i], currentXCA + 2, y + 4, { baseline: 'middle' });
+                    currentXCA += practicasColWidthsCA[i];
+                    if (i < practicasHeadersCA.length - 1) pdf.line(currentXCA, y, currentXCA, y + 23 * 8);
+                }
+                y += 8;
+                const practicasRowsCA = practicasTableBodyCA?.querySelectorAll('tr');
+                for(let i = 0; i < 22; i++) {
+                    pdf.rect(margin, y, pageWidth - margin * 2, 8);
+                    if (practicasRowsCA && i < practicasRowsCA.length) {
+                        const cells = practicasRowsCA[i].querySelectorAll('input');
+                        currentXCA = margin;
+                        for(let j = 0; j < cells.length; j++) {
+                            pdf.text(cells[j].value, currentXCA + 2, y + 4, { baseline: 'middle', maxWidth: practicasColWidthsCA[j] - 4 });
+                            currentXCA += practicasColWidthsCA[j];
+                        }
+                    }
+                    y += 8;
+                }
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                // --- PAGE 10 (Control de Enfermería) ---
+                pdf.addPage();
+                drawHeader();
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                y = 45;
+                pdf.setFontSize(12).text('CONTROL DE ENFERMERIA', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                drawField('PACIENTE:', getValue('paciente-enfermeria'), y);
+                y += lineSpacing;
+                const enfermeriaHeadersCA = ["Fecha", "Hora", "T.A.", "F.C.", "F.R.", "Temp.", "Observaciones"];
+                const enfermeriaColWidthsCA = [30, 15, 15, 15, 15, 15, 75];
+                const enfermeriaTableBodyCA = activeContent.querySelector('.enfermeria-table tbody');
+                currentXCA = margin;
+                pdf.rect(margin, y, pageWidth - margin * 2, 8);
+                for(let i = 0; i < enfermeriaHeadersCA.length; i++) {
+                    pdf.text(enfermeriaHeadersCA[i], currentXCA + 2, y + 4, { baseline: 'middle' });
+                    currentXCA += enfermeriaColWidthsCA[i];
+                     if (i < enfermeriaHeadersCA.length - 1) pdf.line(currentXCA, y, currentXCA, y + 17 * 12);
+                }
+                y += 8;
+                const enfermeriaRowsCA = enfermeriaTableBodyCA?.querySelectorAll('tr');
+                for(let i = 0; i < 16; i++) {
+                     pdf.rect(margin, y, pageWidth - margin * 2, 12);
+                     if(enfermeriaRowsCA && i < enfermeriaRowsCA.length) {
+                        const cells = enfermeriaRowsCA[i].querySelectorAll('input');
+                        currentXCA = margin;
+                        for(let j = 0; j < cells.length; j++) {
+                            pdf.text(cells[j].value, currentXCA + 2, y + 6, { baseline: 'middle', maxWidth: enfermeriaColWidthsCA[j] - 4 });
+                            currentXCA += enfermeriaColWidthsCA[j];
+                        }
+                     }
+                     y += 12;
+                }
+                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+                
+                // --- PAGE 11 (Report) ---
+                pdf.addPage();
+                drawHeader();
+                y = 45;
+                pdf.setFontSize(14).text('REPORT', pageWidth/2, y, { align: 'center'});
+                y += lineSpacing * 2;
+                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for patient
+                drawField('PACIENTE:', getValue('paciente-report'), y + 6, margin + 2, margin + 30);
+                y += 10;
+                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for date, sala, cama
+                drawField('FECHA:', getValue('fecha-report'), y + 6, margin + 2, margin + 23);
+                drawField('SALA:', getValue('sala-report'), y + 6, pageWidth / 2 - 20, pageWidth / 2 - 4);
+                drawField('CAMA:', getValue('cama-report'), y + 6, pageWidth / 2 + 50, pageWidth / 2 + 69);
+                y += 15;
+                const reportContentCA = getTextAreaValue('report-contenido');
+                pdf.setLineDashPattern([1, 1], 0);
+                let lineY2 = y;
+                const reportLineHeight = 8;
+                const reportNumLines = 25;
+                for(let i = 0; i < reportNumLines; i++) {
+                    if (i < reportContentCA.length) {
+                        pdf.text(reportContentCA[i], margin, lineY2, { baseline: 'middle', maxWidth: pageWidth - margin * 2 });
+                    }
+                    pdf.line(margin, lineY2, pageWidth - margin, lineY2);
+                    lineY2 += reportLineHeight;
+                }
+                pdf.setLineDashPattern([], 0);
+                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+
+                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
+                const patientDNI = getValue('dni');
+                drawMedicalDischargePage(patientName, patientDNI);
+
+                const finalPdfBytes = pdf.output('arraybuffer');
+                const mainPdfDoc = await PDFDocument.load(finalPdfBytes);
+
+                if (scannedFile) {
                     try {
-                        const uploadedPdfBytes = await fetch(patientData['cirugia-anestesia'].escaneado_alta).then(res => res.arrayBuffer());
+                        const uploadedPdfBytes = await scannedFile.arrayBuffer();
                         const uploadedPdfDoc = await PDFDocument.load(uploadedPdfBytes);
-                        const mainPdfDoc = await PDFDocument.load(pdf.output('arraybuffer'));
                         
-                        const uploadedPagesIndices = Array.from({ length: uploadedPdfDoc.getPageCount() }, (_, i) => i);
+                        const uploadedPagesIndices = uploadedPdfDoc.getPageIndices();
                         const copiedPages = await mainPdfDoc.copyPages(uploadedPdfDoc, uploadedPagesIndices);
                         
+                        // Insert the scanned pages after the anesthesia protocol cover page (page 6, index 5)
                         copiedPages.forEach((page, index) => {
-                            mainPdfDoc.addPage(page);
+                            mainPdfDoc.insertPage(6 + index, page);
                         });
-                        
-                        const finalMergedPdfBytes = await mainPdfDoc.save();
-                        const mergedPdfBlob = new Blob([finalMergedPdfBytes], { type: 'application/pdf' });
-                        const mergedPdfUrl = URL.createObjectURL(mergedPdfBlob);
-                        
-                        const mergedLink = document.createElement('a');
-                        mergedLink.href = mergedPdfUrl;
-                        mergedLink.download = `reporte-paciente-${dni}-anestesia.pdf`;
-                        document.body.appendChild(mergedLink);
-                        mergedLink.click();
-                        document.body.removeChild(mergedLink);
-                        URL.revokeObjectURL(mergedPdfUrl);
-                        
+
                     } catch (mergeError) {
                         console.error("Error merging PDFs:", mergeError);
                         alert("Error al combinar el PDF escaneado. Se generará el PDF sin el archivo adjunto.");
                     }
                 } 
+
+                const finalMergedPdfBytes = await mainPdfDoc.save();
+                const blob = new Blob([finalMergedPdfBytes], { type: 'application/pdf' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                const filename = `cirugia-anestesia-${getValue('apellido')}-${getValue('dni')}.pdf`;
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+
+                await setDischargeTimestamp();
             }
 
-            // Generate medical discharge and general report only if there's a discharge timestamp
-            if (patientData.dischargeTimestamp) {
-                generateMedicalDischarge(pdf, patientData, user);
-                generateGeneralReport(pdf, patientData, user);
-            }
-
-            const finalPdfBytes = await pdf.output('arraybuffer');
-            const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            const filename = `reporte-paciente-${dni}.pdf`;
-            link.download = filename;
-            link.click();
-            URL.revokeObjectURL(link.href);
-
-            await setDischargeTimestamp();
-            
-        } catch (error: any) {
+        } catch (error) {
             console.error("PDF Generation Error:", error);
-            alert(`Ocurrió un error al generar el PDF. Detalles: ${error.message}`);
+            alert('Ocurrió un error al generar el PDF. Por favor, revise la consola para más detalles.');
         } finally {
             btn.textContent = originalButtonText;
             btn.disabled = false;
         }
     });
+
 });
