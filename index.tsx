@@ -16,6 +16,20 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import jsPDF from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
 
+// --- Supabase Setup ---
+// Initialize the client at the module level to ensure it's available as soon as the script runs.
+// This resolves timing issues where the script might try to access env variables before they are ready.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    // Throw a clear error if the environment variables are not configured.
+    // This is more robust than trying to manipulate the DOM, which may not be loaded yet.
+    throw new Error("Error de Configuración: Las variables de entorno de Supabase (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) no están configuradas.");
+}
+
+const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // --- User Profile Type Definition ---
 interface UserProfile {
     id: string; // UUID from auth.users
@@ -28,7 +42,6 @@ interface UserProfile {
 }
 
 // --- START: Supabase API Layer ---
-let supabase: SupabaseClient;
 
 /**
  * Logs in a user and fetches their profile.
@@ -139,19 +152,7 @@ const apiCreateUser = async (userData: { username: string, password: string, pro
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Supabase Setup ---
-    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        document.body.innerHTML = `<div style="padding: 2rem; text-align: center; font-family: sans-serif; color: red;">
-            <h1>Error de Configuración</h1>
-            <p>Las variables de entorno de Supabase (SUPABASE_URL, SUPABASE_ANON_KEY) no están configuradas.</p>
-        </div>`;
-        return;
-    }
-    
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // The Supabase client is now initialized in the module scope, so no setup is needed here.
     
     let currentUser: UserProfile | null = null;
 
