@@ -2,6 +2,16 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
+// Fix: Add type definitions for Vite environment variables to fix TypeScript errors.
+declare global {
+    interface ImportMeta {
+        readonly env: {
+            readonly VITE_SUPABASE_URL: string;
+            readonly VITE_SUPABASE_ANON_KEY: string;
+        };
+    }
+}
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import jsPDF from 'jspdf';
 import { PDFDocument } from 'pdf-lib';
@@ -26,13 +36,15 @@ let supabase: SupabaseClient;
 
 /**
  * Logs in a user and fetches their profile.
- * @param username The user's username.
+ * @param usernameOrEmail The user's username or email.
  * @param password The user's password.
  * @returns The user's profile data.
  */
-const apiLogin = async (username: string, password: string): Promise<UserProfile> => {
-    // Supabase auth uses email, so we construct one. Assumes usernames are unique.
-    const email = `${username.trim()}@clinica.local`;
+const apiLogin = async (usernameOrEmail: string, password: string): Promise<UserProfile> => {
+    const trimmedLogin = usernameOrEmail.trim();
+    // If the input looks like an email, use it directly. Otherwise, treat it as a username.
+    const email = trimmedLogin.includes('@') ? trimmedLogin : `${trimmedLogin}@clinica.local`;
+
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (authError) throw authError;
@@ -275,13 +287,13 @@ document.addEventListener('DOMContentLoaded', () => {
         submitButton.disabled = true;
         submitButton.textContent = 'Ingresando...';
 
-        const username = (document.getElementById('login-username') as HTMLInputElement).value;
+        const usernameOrEmail = (document.getElementById('login-username-email') as HTMLInputElement).value;
         const password = (document.getElementById('login-password') as HTMLInputElement).value;
         const loginError = document.getElementById('login-error') as HTMLParagraphElement;
         loginError.style.display = 'none';
         
         try {
-            await apiLogin(username, password);
+            await apiLogin(usernameOrEmail, password);
             // onAuthStateChange will handle showing the app view
         } catch (error: any) {
             console.error('Login failed:', error);
