@@ -45,6 +45,7 @@ interface UserProfile {
 
 /**
  * Logs in a user and fetches their profile.
+ * Throws a specific error if the profile is not found after a successful login.
  * @param usernameOrEmail The user's username or email.
  * @param password The user's password.
  * @returns The user's profile data.
@@ -65,15 +66,16 @@ const apiLogin = async (usernameOrEmail: string, password: string): Promise<User
         .eq('id', authData.user.id)
         .single();
 
-    if (profileError) {
-        // Log out the user if their profile is missing to prevent a broken state
+    if (profileError || !profileData) {
+        // Log out the user if their profile is missing to prevent a broken state.
         await supabase.auth.signOut();
-        throw profileError;
+        // Throw a specific, consistent error that the UI can check for.
+        throw new Error("User profile not found after login.");
     }
-    if (!profileData) throw new Error("Login failed, user profile not found.");
 
     return profileData as UserProfile;
 };
+
 
 /**
  * Logs out the current user.
@@ -134,6 +136,26 @@ const apiGetAllUsers = async (): Promise<UserProfile[]> => {
     }
     return data as UserProfile[];
 }
+
+/**
+ * Checks if at least one admin user exists in the system.
+ * @returns {Promise<boolean>} True if an admin exists, false otherwise.
+ */
+const apiDoesAdminExist = async (): Promise<boolean> => {
+    const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('especialidad', 'Administrador');
+
+    if (error) {
+        console.error("Error checking for admin existence:", error);
+        // Fail safe: assume admin exists to not expose panel on error
+        return true; 
+    }
+
+    return (count ?? 0) > 0;
+}
+
 
 /**
  * Creates a new user by invoking a Supabase Edge Function.
@@ -259,15 +281,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (userSessionDisplay) userSessionDisplay.style.display = 'none';
     };
 
-    const showAppView = (user: UserProfile) => {
+    const showAppView = async (user: UserProfile) => {
         if (authContainer) authContainer.style.display = 'none';
         if (appContainer) appContainer.style.display = 'block';
         if (userSessionDisplay) userSessionDisplay.style.display = 'flex';
         if (userInfoDisplay) userInfoDisplay.textContent = `Bienvenido(a), ${user.nombre} ${user.apellido} (${user.especialidad})`;
         
-        // Show/hide admin tab based on role
+        // Show/hide admin tab based on role OR if no admin exists yet
         if (adminTab) {
-            adminTab.style.display = user.especialidad === 'Administrador' ? 'block' : 'none';
+            const adminExists = await apiDoesAdminExist();
+            adminTab.style.display = (user.especialidad === 'Administrador' || !adminExists) ? 'block' : 'none';
         }
 
         unlockForm();
@@ -279,10 +302,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return currentUser;
     }
 
-    const updateUserSession = (profile: UserProfile | null) => {
+    const updateUserSession = async (profile: UserProfile | null) => {
         currentUser = profile;
         if (profile) {
-            showAppView(profile);
+            await showAppView(profile);
         } else {
             showLoginView();
         }
@@ -306,7 +329,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // onAuthStateChange will handle showing the app view
         } catch (error: any) {
             console.error('Login failed:', error);
-            loginError.textContent = 'Usuario o contraseña incorrectos.';
+            // Improved error handling to give specific feedback
+            if (error.message.includes('profile')) {
+                loginError.textContent = 'No se encontró un perfil para este usuario. Contacte a un administrador.';
+            } else { // Defaults to a generic auth error
+                loginError.textContent = 'Usuario o contraseña incorrectos.';
+            }
             loginError.style.display = 'block';
         } finally {
             submitButton.disabled = false;
@@ -346,15 +374,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (error) throw error;
 
-                updateUserSession(profile as UserProfile);
+                await updateUserSession(profile as UserProfile);
             } catch (error) {
                 console.error("Failed to fetch user profile on auth change", error);
                 // Force sign out if profile is missing
                 await apiLogout();
-                updateUserSession(null);
+                await updateUserSession(null);
             }
         } else {
-            updateUserSession(null);
+            await updateUserSession(null);
         }
     });
     
