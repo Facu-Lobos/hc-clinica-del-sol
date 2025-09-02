@@ -44,19 +44,36 @@ interface UserProfile {
 // --- START: Supabase API Layer ---
 
 /**
- * Attempts to log in a user using their credentials.
- * The actual profile fetching and UI update is handled by the onAuthStateChange listener.
+ * Attempts to log in a user and fetches their profile.
+ * If the profile doesn't exist, it logs the user out and throws an error.
  * @param usernameOrEmail The user's username or email.
  * @param password The user's password.
+ * @returns The user's profile object.
  */
-const apiLogin = async (usernameOrEmail: string, password: string): Promise<void> => {
+const apiLogin = async (usernameOrEmail: string, password: string): Promise<UserProfile> => {
     const trimmedLogin = usernameOrEmail.trim();
     // If the input looks like an email, use it directly. Otherwise, treat it as a username.
     const email = trimmedLogin.includes('@') ? trimmedLogin : `${trimmedLogin}@clinica.local`;
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) throw error;
+    if (signInError) throw signInError;
+    if (!signInData.user) throw new Error("Authentication succeeded but no user object was returned.");
+
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', signInData.user.id)
+        .single();
+
+    if (profileError || !profile) {
+        // Critical: Log the user out if their profile is missing to avoid a broken session state.
+        await supabase.auth.signOut();
+        // Provide a clear error message for the UI.
+        throw new Error("El perfil del usuario no fue encontrado. Por favor, contacte a un administrador.");
+    }
+    
+    return profile as UserProfile;
 };
 
 
@@ -299,24 +316,32 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const form = e.target as HTMLFormElement;
         const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
-        submitButton.disabled = true;
-        submitButton.textContent = 'Ingresando...';
-
         const usernameOrEmail = (document.getElementById('login-username-email') as HTMLInputElement).value;
         const password = (document.getElementById('login-password') as HTMLInputElement).value;
         const loginError = document.getElementById('login-error') as HTMLParagraphElement;
+        
+        // Reset state before attempt
+        submitButton.disabled = true;
+        submitButton.textContent = 'Ingresando...';
         loginError.style.display = 'none';
         
         try {
-            await apiLogin(usernameOrEmail, password);
-            // On success, the onAuthStateChange listener will handle the view change.
-            // The button remains in the "Ingresando..." state until the view disappears,
-            // which provides clear feedback to the user.
+            const userProfile = await apiLogin(usernameOrEmail, password);
+            // The onAuthStateChange listener will also fire, but we can update the UI
+            // immediately for a faster perceived response.
+            await updateUserSession(userProfile);
         } catch (error: any) {
             console.error('Login failed:', error);
-            loginError.textContent = 'Usuario o contraseña incorrectos.';
+            
+            // Use a more specific error message if available from Supabase or our custom logic
+            if (error.message.includes("Invalid login credentials")) {
+                 loginError.textContent = 'Usuario o contraseña incorrectos.';
+            } else {
+                 loginError.textContent = error.message;
+            }
             loginError.style.display = 'block';
-             // Only reset the button on error so the user can try again.
+            
+            // Reset the button on any error so the user can try again.
             submitButton.disabled = false;
             submitButton.textContent = 'Ingresar';
         }
