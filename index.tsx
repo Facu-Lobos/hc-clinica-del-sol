@@ -148,16 +148,15 @@ const apiDoesAdminExist = async (): Promise<boolean> => {
 
 /**
  * Creates a new user by invoking a Supabase Edge Function.
- * The payload is a flat object containing both auth and profile data.
  * @param userData The data for the new user.
  */
-const apiCreateUser = async (userData: { email: string, password: string, profileData: Omit<UserProfile, 'id'> }) => {
-    // The Edge Function likely expects a flat payload. We combine auth details
-    // and profile data into a single object. This is a common pattern for such functions.
+const apiCreateUser = async (userData: { username: string; password: string; profileData: Omit<UserProfile, 'id'> }) => {
+    // The payload structure is derived from the Edge Function's error message,
+    // which explicitly requested 'username', 'password', and 'profileData'.
     const payload = {
-        email: userData.email,
+        username: userData.username,
         password: userData.password,
-        ...userData.profileData,
+        profileData: userData.profileData,
     };
 
     const { data, error } = await supabase.functions.invoke('create-user', {
@@ -469,10 +468,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("Por favor, complete todos los campos obligatorios.");
             }
     
-            // The Edge Function needs an email to create an auth user.
-            // We construct it from the username, same as the login logic.
-            const email = `${username}@clinica.local`;
-    
             let firmaBase64: string | undefined = undefined;
             if (firmaInput.files && firmaInput.files[0]) {
                 firmaBase64 = await fileToBase64(firmaInput.files[0]);
@@ -488,8 +483,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 firma: firmaBase64
             };
     
-            // Call the updated API function with the structured data.
-            await apiCreateUser({ email, password, profileData });
+            // Call the API function with the structure expected by the Edge Function.
+            await apiCreateUser({ username, password, profileData });
     
             successEl.textContent = `Usuario "${username}" creado exitosamente.`;
             successEl.style.display = 'block';
