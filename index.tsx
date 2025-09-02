@@ -344,17 +344,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('logout-btn')?.addEventListener('click', async () => {
         try {
             await apiLogout();
-             // Clear form fields on logout to prevent data leakage
-            const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-            forms.forEach(form => {
-                form.reset();
-                // Also clear signature displays
-                form.querySelectorAll('.signature-display').forEach(display => {
-                    display.innerHTML = '';
-                });
-            });
-            unlockForm();
-            // onAuthStateChange will handle showing the login view
+            // Force a full page reload to completely reset the application and Supabase client state.
+            // This ensures a clean slate for the next login, preventing the "stuck button" issue.
+            window.location.reload();
         } catch (error) {
             console.error("Logout failed:", error);
             alert("Error al cerrar sesión.");
