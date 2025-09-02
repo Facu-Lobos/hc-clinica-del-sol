@@ -44,36 +44,19 @@ interface UserProfile {
 // --- START: Supabase API Layer ---
 
 /**
- * Logs in a user and fetches their profile.
- * Throws a specific error if the profile is not found after a successful login.
+ * Attempts to log in a user using their credentials.
+ * The actual profile fetching and UI update is handled by the onAuthStateChange listener.
  * @param usernameOrEmail The user's username or email.
  * @param password The user's password.
- * @returns The user's profile data.
  */
-const apiLogin = async (usernameOrEmail: string, password: string): Promise<UserProfile> => {
+const apiLogin = async (usernameOrEmail: string, password: string): Promise<void> => {
     const trimmedLogin = usernameOrEmail.trim();
     // If the input looks like an email, use it directly. Otherwise, treat it as a username.
     const email = trimmedLogin.includes('@') ? trimmedLogin : `${trimmedLogin}@clinica.local`;
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (authError) throw authError;
-    if (!authData.user) throw new Error("Login failed, no user returned.");
-
-    const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authData.user.id)
-        .single();
-
-    if (profileError || !profileData) {
-        // Log out the user if their profile is missing to prevent a broken state.
-        await supabase.auth.signOut();
-        // Throw a specific, consistent error that the UI can check for.
-        throw new Error("User profile not found after login.");
-    }
-
-    return profileData as UserProfile;
+    if (error) throw error;
 };
 
 
@@ -329,12 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // onAuthStateChange will handle showing the app view
         } catch (error: any) {
             console.error('Login failed:', error);
-            // Improved error handling to give specific feedback
-            if (error.message.includes('profile')) {
-                loginError.textContent = 'No se encontró un perfil para este usuario. Contacte a un administrador.';
-            } else { // Defaults to a generic auth error
-                loginError.textContent = 'Usuario o contraseña incorrectos.';
-            }
+            loginError.textContent = 'Usuario o contraseña incorrectos.';
             loginError.style.display = 'block';
         } finally {
             submitButton.disabled = false;
@@ -372,12 +350,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     .eq('id', session.user.id)
                     .single();
                 
-                if (error) throw error;
+                if (error || !profile) {
+                     // This case handles when a user exists in auth but not in profiles table.
+                    throw new Error("User profile not found after login.");
+                }
 
                 await updateUserSession(profile as UserProfile);
             } catch (error) {
                 console.error("Failed to fetch user profile on auth change", error);
-                // Force sign out if profile is missing
+                // Force sign out if profile is missing to prevent broken state
                 await apiLogout();
                 await updateUserSession(null);
             }
