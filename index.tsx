@@ -148,16 +148,16 @@ const apiDoesAdminExist = async (): Promise<boolean> => {
 
 /**
  * Creates a new user by invoking a Supabase Edge Function.
- * The payload is structured to separate auth details from profile data.
+ * The payload is a flat object containing both auth and profile data.
  * @param userData The data for the new user.
  */
 const apiCreateUser = async (userData: { email: string, password: string, profileData: Omit<UserProfile, 'id'> }) => {
-    // A structured payload is more robust. The Edge Function can clearly distinguish
-    // authentication data (email, password) from the profile data.
+    // The Edge Function likely expects a flat payload. We combine auth details
+    // and profile data into a single object. This is a common pattern for such functions.
     const payload = {
         email: userData.email,
         password: userData.password,
-        profile_data: userData.profileData,
+        ...userData.profileData,
     };
 
     const { data, error } = await supabase.functions.invoke('create-user', {
