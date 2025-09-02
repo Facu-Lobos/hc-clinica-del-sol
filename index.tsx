@@ -148,24 +148,33 @@ const apiDoesAdminExist = async (): Promise<boolean> => {
 
 /**
  * Creates a new user by invoking a Supabase Edge Function.
+ * The payload is structured to separate auth details from profile data.
  * @param userData The data for the new user.
  */
-const apiCreateUser = async (userData: { username: string, password: string, profileData: Omit<UserProfile, 'id'> }) => {
-    // The Edge Function likely expects a flat object, not a nested one.
-    // We'll flatten the payload here before sending.
+const apiCreateUser = async (userData: { email: string, password: string, profileData: Omit<UserProfile, 'id'> }) => {
+    // A structured payload is more robust. The Edge Function can clearly distinguish
+    // authentication data (email, password) from the profile data.
     const payload = {
-        username: userData.username,
+        email: userData.email,
         password: userData.password,
-        ...userData.profileData,
+        profile_data: userData.profileData,
     };
 
     const { data, error } = await supabase.functions.invoke('create-user', {
         body: payload,
     });
 
-    if (error) throw error;
+    if (error) {
+        console.error("Error invoking create-user function:", error);
+        if (error.message.includes("non-2xx status code")) {
+            // Provide a more helpful error to the developer/admin.
+            throw new Error("El servidor rechazó la solicitud. Verifique los logs de la Edge Function 'create-user' en Supabase para más detalles (causa común: permisos o datos inválidos).");
+        }
+        throw error; // Rethrow other errors
+    }
     return data;
 }
+
 
 // --- END: Supabase API Layer ---
 
@@ -441,26 +450,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
         const errorEl = document.getElementById('create-user-error') as HTMLParagraphElement;
         const successEl = document.getElementById('create-user-success') as HTMLParagraphElement;
-
+    
         errorEl.style.display = 'none';
         successEl.style.display = 'none';
         submitButton.disabled = true;
         submitButton.textContent = 'Creando...';
-        
+    
         try {
-            const username = (document.getElementById('create-username') as HTMLInputElement).value;
+            const username = (document.getElementById('create-username') as HTMLInputElement).value.trim();
             const password = (document.getElementById('create-password') as HTMLInputElement).value;
             const nombre = (document.getElementById('create-nombre') as HTMLInputElement).value;
             const apellido = (document.getElementById('create-apellido') as HTMLInputElement).value;
             const especialidad = (document.getElementById('create-especialidad') as HTMLSelectElement).value;
             const matricula = (document.getElementById('create-matricula') as HTMLInputElement).value;
             const firmaInput = (document.getElementById('create-firma') as HTMLInputElement);
-
+    
+            if (!username || !password || !nombre || !apellido || !especialidad) {
+                throw new Error("Por favor, complete todos los campos obligatorios.");
+            }
+    
+            // The Edge Function needs an email to create an auth user.
+            // We construct it from the username, same as the login logic.
+            const email = `${username}@clinica.local`;
+    
             let firmaBase64: string | undefined = undefined;
             if (firmaInput.files && firmaInput.files[0]) {
                 firmaBase64 = await fileToBase64(firmaInput.files[0]);
             }
-
+    
+            // This is the data for the public 'profiles' table.
             const profileData = {
                 username,
                 nombre,
@@ -469,14 +487,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 matricula: matricula || undefined,
                 firma: firmaBase64
             };
-
-            await apiCreateUser({ username, password, profileData });
-
+    
+            // Call the updated API function with the structured data.
+            await apiCreateUser({ email, password, profileData });
+    
             successEl.textContent = `Usuario "${username}" creado exitosamente.`;
             successEl.style.display = 'block';
             form.reset();
             await populateUsersTable();
-
+    
         } catch (error: any) {
             console.error("User creation failed:", error);
             errorEl.textContent = `Error al crear usuario: ${error.message}`;
