@@ -19,16 +19,16 @@ import { PDFDocument } from 'pdf-lib';
 // --- Supabase Setup ---
 // Initialize the client at the module level to ensure it's available as soon as the script runs.
 // This resolves timing issues where the script might try to access env variables before they are ready.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const VITE_SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL;
+const VITE_SUPABASE_ANON_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+if (!VITE_SUPABASE_URL || !VITE_SUPABASE_ANON_KEY) {
     // Throw a clear error if the environment variables are not configured.
     // This is more robust than trying to manipulate the DOM, which may not be loaded yet.
     throw new Error("Error de Configuración: Las variables de entorno de Supabase (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) no están configuradas.");
 }
 
-const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase: SupabaseClient = createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY);
 
 // --- User Profile Type Definition ---
 interface UserProfile {
