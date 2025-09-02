@@ -309,12 +309,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             await apiLogin(usernameOrEmail, password);
-            // onAuthStateChange will handle showing the app view
+            // On success, the onAuthStateChange listener will handle the view change.
+            // The button remains in the "Ingresando..." state until the view disappears,
+            // which provides clear feedback to the user.
         } catch (error: any) {
             console.error('Login failed:', error);
             loginError.textContent = 'Usuario o contraseña incorrectos.';
             loginError.style.display = 'block';
-        } finally {
+             // Only reset the button on error so the user can try again.
             submitButton.disabled = false;
             submitButton.textContent = 'Ingresar';
         }
