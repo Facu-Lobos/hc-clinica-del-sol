@@ -44,36 +44,25 @@ interface UserProfile {
 // --- START: Supabase API Layer ---
 
 /**
- * Attempts to log in a user and fetches their profile.
- * If the profile doesn't exist, it logs the user out and throws an error.
+ * Attempts to log in a user. Throws a user-friendly error on failure.
+ * This function ONLY handles authentication. Profile fetching is handled by the
+ * onAuthStateChange listener to act as a single source of truth.
  * @param usernameOrEmail The user's username or email.
  * @param password The user's password.
- * @returns The user's profile object.
  */
-const apiLogin = async (usernameOrEmail: string, password: string): Promise<UserProfile> => {
+const apiLogin = async (usernameOrEmail: string, password: string): Promise<void> => {
     const trimmedLogin = usernameOrEmail.trim();
     // If the input looks like an email, use it directly. Otherwise, treat it as a username.
     const email = trimmedLogin.includes('@') ? trimmedLogin : `${trimmedLogin}@clinica.local`;
 
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (signInError) throw signInError;
-    if (!signInData.user) throw new Error("Authentication succeeded but no user object was returned.");
-
-    const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', signInData.user.id)
-        .single();
-
-    if (profileError || !profile) {
-        // Critical: Log the user out if their profile is missing to avoid a broken session state.
-        await supabase.auth.signOut();
-        // Provide a clear error message for the UI.
-        throw new Error("El perfil del usuario no fue encontrado. Por favor, contacte a un administrador.");
+    if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+            throw new Error('Usuario o contraseña incorrectos.');
+        }
+        throw error; // Rethrow other Supabase errors
     }
-    
-    return profile as UserProfile;
 };
 
 
@@ -326,22 +315,19 @@ document.addEventListener('DOMContentLoaded', () => {
         loginError.style.display = 'none';
         
         try {
-            const userProfile = await apiLogin(usernameOrEmail, password);
-            // The onAuthStateChange listener will also fire, but we can update the UI
-            // immediately for a faster perceived response.
-            await updateUserSession(userProfile);
+            await apiLogin(usernameOrEmail, password);
+            // On success, we intentionally do nothing here.
+            // The onAuthStateChange listener will handle the UI transition.
+            // The button will remain in the "Ingresando..." state until the view changes,
+            // which provides clear feedback to the user.
         } catch (error: any) {
             console.error('Login failed:', error);
             
-            // Use a more specific error message if available from Supabase or our custom logic
-            if (error.message.includes("Invalid login credentials")) {
-                 loginError.textContent = 'Usuario o contraseña incorrectos.';
-            } else {
-                 loginError.textContent = error.message;
-            }
+            // Display the error message from our API layer or Supabase
+            loginError.textContent = error.message;
             loginError.style.display = 'block';
             
-            // Reset the button on any error so the user can try again.
+            // IMPORTANT: Reset the button ONLY on error so the user can try again.
             submitButton.disabled = false;
             submitButton.textContent = 'Ingresar';
         }
@@ -368,28 +354,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Initial Check & Session Management ---
+    // This listener is now the SINGLE SOURCE OF TRUTH for the application's UI state based on auth.
     supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user) {
             try {
-                const { data: profile, error } = await supabase
+                const { data: profile, error: profileError } = await supabase
                     .from('profiles')
                     .select('*')
                     .eq('id', session.user.id)
                     .single();
                 
-                if (error || !profile) {
-                     // This case handles when a user exists in auth but not in profiles table.
-                    throw new Error("User profile not found after login.");
+                // This is the critical failure case that was previously silent.
+                if (profileError || !profile) {
+                    console.error("CRITICAL: User is authenticated but profile is missing. Forcing sign-out.", { userId: session.user.id, profileError });
+
+                    // Log the user out to prevent a broken session state.
+                    await apiLogout();
+                    
+                    // Now, provide clear feedback on the login screen.
+                    const loginError = document.getElementById('login-error') as HTMLParagraphElement;
+                    if (loginError) {
+                        loginError.textContent = "El perfil del usuario no fue encontrado. Por favor, contacte a un administrador.";
+                        loginError.style.display = 'block';
+                    }
+                    
+                    // And ensure the login button is reset.
+                    const submitButton = document.querySelector('#login-form button[type="submit"]') as HTMLButtonElement;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Ingresar';
+                    }
+                    
+                    // Don't continue to updateUserSession, as the logout will trigger another auth state change.
+                    return;
                 }
 
+                // If profile is found, proceed to show the app.
                 await updateUserSession(profile as UserProfile);
+
             } catch (error) {
-                console.error("Failed to fetch user profile on auth change", error);
-                // Force sign out if profile is missing to prevent broken state
-                await apiLogout();
-                await updateUserSession(null);
+                console.error("Error processing authenticated session:", error);
+                await apiLogout(); // Fallback to sign out on any other unexpected error.
             }
         } else {
+            // User is not signed in or has signed out.
             await updateUserSession(null);
         }
     });
