@@ -1,1996 +1,897 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-// Fix: Add type definitions for Vite environment variables to fix TypeScript errors.
-declare global {
-    interface ImportMeta {
-        readonly env: {
-            readonly VITE_SUPABASE_URL: string;
-            readonly VITE_SUPABASE_ANON_KEY: string;
-        };
-    }
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clinica del Sol - Formulario Digital</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="icon" href="data:image/svg+xml,%3csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='20' cy='20' r='20' fill='%2338BAEA'/%3e%3cline x1='10' y1='20' x2='30' y2='20' stroke='white' stroke-width='4'/%3e%3cline x1='20' y1='10' x2='20' y2='30' stroke='white' stroke-width='4'/%3e%3c/svg%3e">
+    <link rel="shortcut icon" href="data:image/svg+xml,%3csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='20' cy='20' r='20' fill='%2338BAEA'/%3e%3cline x1='10' y1='20' x2='30' y2='20' stroke='white' stroke-width='4'/%3e%3cline x1='20' y1='10' x2='20' y2='30' stroke='white' stroke-width='4'/%3e%3c/svg%3e">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^0.14.0",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "pdf-lib": "https://esm.sh/pdf-lib@^1.17.1",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.44.4"
+  }
 }
+</script>
+    <script type="module" src="index.tsx"></script>
+</head>
+<body>
+    <header>
+        <div class="logo-group">
+            <div class="logo">
+                <div class="logo-img"></div>
+                <div>
+                    <h1>Clinica del Sol</h1>
+                    <h2>Clinica Privada</h2>
+                </div>
+            </div>
+        </div>
+        <div id="user-session" style="display: none;">
+            <p id="user-info"></p>
+            <button id="logout-btn" class="btn-secondary">Cerrar Sesión</button>
+        </div>
+    </header>
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import jsPDF from 'jspdf';
-import { PDFDocument } from 'pdf-lib';
-
-// --- Supabase Setup ---
-// Initialize the client at the module level to ensure it's available as soon as the script runs.
-// This resolves timing issues where the script might try to access env variables before they are ready.
-const VITE_SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL;
-const VITE_SUPABASE_ANON_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY;
-
-if (!VITE_SUPABASE_URL || !VITE_SUPABASE_ANON_KEY) {
-    // Throw a clear error if the environment variables are not configured.
-    // This is more robust than trying to manipulate the DOM, which may not be loaded yet.
-    throw new Error("Error de Configuración: Las variables de entorno de Supabase (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) no están configuradas.");
-}
-
-const supabase: SupabaseClient = createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY);
-
-// --- User Profile Type Definition ---
-interface UserProfile {
-    id: string; // UUID from auth.users
-    nombre: string;
-    apellido: string;
-    especialidad: string;
-    matricula?: string;
-    firma?: string; // Base64 encoded image
-    username: string;
-}
-
-// --- START: Supabase API Layer ---
-
-/**
- * Attempts to log in a user. Throws a user-friendly error on failure.
- * This function ONLY handles authentication. Profile fetching is handled by the
- * onAuthStateChange listener to act as a single source of truth.
- * @param usernameOrEmail The user's username or email.
- * @param password The user's password.
- */
-const apiLogin = async (usernameOrEmail: string, password: string): Promise<void> => {
-    const trimmedLogin = usernameOrEmail.trim();
-    // If the input looks like an email, use it directly. Otherwise, treat it as a username.
-    const email = trimmedLogin.includes('@') ? trimmedLogin : `${trimmedLogin}@clinica.local`;
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) {
-        if (error.message.includes("Invalid login credentials")) {
-            throw new Error('Usuario o contraseña incorrectos.');
-        }
-        throw error; // Rethrow other Supabase errors
-    }
-};
-
-
-/**
- * Logs out the current user.
- */
-const apiLogout = async (): Promise<void> => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-};
-
-/**
- * Fetches a single patient record by DNI.
- * @param dni The patient's DNI.
- * @returns The patient's data object or null if not found.
- */
-const apiGetPatientByDni = async (dni: string): Promise<any | null> => {
-    const { data, error } = await supabase
-        .from('patient_records')
-        .select('data')
-        .eq('dni', dni)
-        .single();
-
-    if (error) {
-        if (error.code === 'PGRST116') return null; // PostgREST error for "exact one row not found" is expected
-        console.error("Error fetching patient:", error);
-        throw error;
-    }
-    return data ? data.data : null;
-};
-
-/**
- * Creates or updates a patient record.
- * @param dni The patient's DNI.
- * @param patientData The complete data object for the patient.
- */
-const apiSavePatient = async (dni: string, patientData: any): Promise<void> => {
-    const { error } = await supabase
-        .from('patient_records')
-        .upsert({ dni: dni, data: patientData }, { onConflict: 'dni' });
-    
-    if (error) {
-        console.error("Error saving patient:", error);
-        throw error;
-    }
-};
-
-/**
- * Fetches all user profiles. Should only be called by an admin.
- * @returns An array of user profiles.
- */
-const apiGetAllUsers = async (): Promise<UserProfile[]> => {
-    const { data, error } = await supabase
-        .from('profiles')
-        .select('*');
-
-    if (error) {
-        console.error("Error fetching users:", error);
-        throw error;
-    }
-    return data as UserProfile[];
-}
-
-/**
- * Checks if at least one admin user exists in the system.
- * @returns {Promise<boolean>} True if an admin exists, false otherwise.
- */
-const apiDoesAdminExist = async (): Promise<boolean> => {
-    const { count, error } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('especialidad', 'Administrador');
-
-    if (error) {
-        console.error("Error checking for admin existence:", error);
-        // Fail safe: assume admin exists to not expose panel on error
-        return true; 
-    }
-
-    return (count ?? 0) > 0;
-}
+    <div id="auth-container">
+        <!-- Login Form -->
+        <div id="login-view">
+            <div class="auth-form">
+                <div class="auth-logo-container">
+                    <div class="logo-img auth-logo"></div>
+                </div>
+                <h2>Iniciar Sesión</h2>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-username-email">Usuario o Email</label>
+                        <input type="text" id="login-username-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Contraseña</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <p id="login-error" class="error-message" style="display: none;">Usuario o contraseña incorrectos.</p>
+                    <button type="submit" class="btn-primary full-width">Ingresar</button>
+                </form>
+                <p class="auth-switch">Si no tienes una cuenta, contacta a un administrador.</p>
+                <div class="powered-by">
+                    <span>by</span>
+                    <div class="powered-by-logo group">
+                        <svg viewBox="0 0 160 40" xmlns="http://www.w3.org/2000/svg" class="dlx-logo-svg">
+                            <defs>
+                                <linearGradient id="glowGradientAuth" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color: #c084fc; stop-opacity: 1"></stop>
+                                    <stop offset="100%" style="stop-color: #9333ea; stop-opacity: 1"></stop>
+                                </linearGradient>
+                                <filter id="glowAuth" x="-50%" y="-50%" width="200%" height="200%">
+                                    <feGaussianBlur stdDeviation="3.5" result="coloredBlur"></feGaussianBlur>
+                                    <feMerge>
+                                        <feMergeNode in="coloredBlur"></feMergeNode>
+                                        <feMergeNode in="SourceGraphic"></feMergeNode>
+                                    </feMerge>
+                                </filter>
+                                 <pattern id="scanlines-auth" width="4" height="4" patternUnits="userSpaceOnUse">
+                                   <path d="M -1 1 H 5" stroke="rgba(255, 255, 255, 0.1)" stroke-width="1"/>
+                                </pattern>
+                            </defs>
+                            <text x="5" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" fill="url(#glowGradientAuth)" class="logo-text-base">DL</text>
+                            <text x="5" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-cyan">DL</text>
+                            <text x="5" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-magenta">DL</text>
+                            <g transform="translate(43, 0)" stroke="url(#glowGradientAuth)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 14 H 26 V 26 H 14 Z"></path>
+                                <g>
+                                    <path d="M20 14 V 4"></path>
+                                    <path d="M20 26 V 36"></path>
+                                    <path d="M14 20 H 4"></path>
+                                    <path d="M26 20 H 36"></path>
+                                    <path d="M14 14 L 8 8"></path>
+                                    <path d="M26 14 L 32 8"></path>
+                                    <path d="M14 26 L 8 32"></path>
+                                    <path d="M26 26 L 32 32"></path>
+                                </g>
+                            </g>
+                             <text x="77" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" fill="url(#glowGradientAuth)" class="logo-text-base">TECH</text>
+                             <text x="77" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-cyan">TECH</text>
+                             <text x="77" y="31" font-family="Montserrat, sans-serif" font-size="30" font-weight="bold" class="glitch-text glitch-magenta">TECH</text>
+                            <g transform="translate(43, 0)" filter="url(#glowAuth)" class="logo-glow-effect">
+                                <g stroke="var(--primary-blue)" stroke-width="2" fill="none">
+                                    <path d="M14 14 H 26 V 26 H 14 Z"></path>
+                                    <path d="M20 14 V 4"></path>
+                                    <path d="M20 26 V 36"></path>
+                                    <path d="M14 20 H 4"></path>
+                                    <path d="M26 20 H 36"></path>
+                                    <path d="M14 14 L 8 8"></path>
+                                    <path d="M26 14 L 32 8"></path>
+                                    <path d="M14 26 L 8 32"></path>
+                                    <path d="M26 26 L 32 32"></path>
+                                </g>
+                            </g>
+                             <rect width="100%" height="100%" class="scan-lines" fill="url(#scanlines-auth)"></rect>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
 
-/**
- * Creates a new user by invoking a Supabase Edge Function.
- * @param userData The data for the new user.
- */
-const apiCreateUser = async (userData: { username: string; password: string; profileData: Omit<UserProfile, 'id'> }) => {
-    // The payload structure is derived from the Edge Function's error message,
-    // which explicitly requested 'username', 'password', and 'profileData'.
-    const payload = {
-        username: userData.username,
-        password: userData.password,
-        profileData: userData.profileData,
-    };
+    <div id="app-container" style="display: none;">
+        <div id="lock-banner" class="lock-banner" style="display: none;"></div>
+        <main>
+            <div class="tabs">
+                <button class="tab-link active" data-tab="hemodinamia">Hemodinamia</button>
+                <button class="tab-link" data-tab="grupo-endoscopico">Grupo Endoscópico</button>
+                <button class="tab-link" data-tab="cirugias">Cirugías</button>
+                <button class="tab-link" data-tab="cirugia-anestesia">Cirugía con Anestesia</button>
+                <button class="tab-link" data-tab="admin-usuarios" id="admin-tab" style="display: none;">Administración</button>
+            </div>
 
-    const { data, error } = await supabase.functions.invoke('create-user', {
-        body: payload,
-    });
+            <!-- Hemodinamia Form -->
+            <div id="hemodinamia" class="tab-content active">
+                <form id="hd-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section id="hd-page-1" class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-medico">Médico</label><input type="text" id="hd-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="hd-hc-n">HC N°</label><input type="text" id="hd-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="hd-apellido">Apellido</label><input type="text" id="hd-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="hd-edad">Edad</label><input type="number" id="hd-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="hd-nombres">Nombres</label><input type="text" id="hd-nombres" name="Nombres" required></div>
+                            <div class="form-group">
+                                <label for="hd-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="hd-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="hd-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="hd-domicilio">Domicilio</label><input type="text" id="hd-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="hd-telefono">Teléfono</label><input type="tel" id="hd-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="hd-estado-civil">Estado Civil</label><input type="text" id="hd-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="hd-cob-social">Cob. Social</label><input type="text" id="hd-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="hd-n-afiliado">N° Afiliado</label><input type="text" id="hd-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="hd-iva">Condición frente al IVA</label><input type="text" id="hd-iva" name="Condición IVA" required></div>
+                        </div>
 
-    if (error) {
-        console.error("Error invoking create-user function:", error);
-        if (error.message.includes("non-2xx status code")) {
-            // Provide a more helpful error to the developer/admin.
-            throw new Error("El servidor rechazó la solicitud. Verifique los logs de la Edge Function 'create-user' en Supabase para más detalles (causa común: permisos o datos inválidos).");
-        }
-        throw error; // Rethrow other errors
-    }
-    return data;
-}
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="hd-fam-nombre">Apellido y Nombre</label><input type="text" id="hd-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="hd-fam-domicilio">Domicilio</label><input type="text" id="hd-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="hd-fam-tel">Tel.</label><input type="tel" id="hd-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="hd-fam-dni">DNI</label><input type="text" id="hd-fam-dni" name="Familiar DNI" required></div>
+                        </div>
 
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="hd-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="hd-hora-ingreso">Hora</label><input type="time" id="hd-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="hd-fecha-egreso">Fecha de Egreso</label><input type="date" id="hd-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="hd-hora-egreso">Hora</label><input type="time" id="hd-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
 
-// --- END: Supabase API Layer ---
+                    <!-- PAGE 2: ADMISSION -->
+                    <section id="hd-page-2" class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-paciente-2">Paciente</label><input type="text" id="hd-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="hd-hc-2">HC</label><input type="text" id="hd-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="hd-servicio">Servicio</label><input type="text" id="hd-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="hd-habitacion">Habitación</label><input type="text" id="hd-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="hd-cama">Cama</label><input type="text" id="hd-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="hd-fecha-2">Fecha</label><input type="date" id="hd-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="hd-motivo-internacion">Motivo de Internación</label><textarea id="hd-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="hd-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-estado-actual">Estado Actual</label><textarea id="hd-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-antecedentes">Antecedentes</label><textarea id="hd-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
 
-
-document.addEventListener('DOMContentLoaded', () => {
-    // The Supabase client is now initialized in the module scope, so no setup is needed here.
-    
-    let currentUser: UserProfile | null = null;
-
-    // --- UI Element References ---
-    const authContainer = document.getElementById('auth-container');
-    const appContainer = document.getElementById('app-container');
-    const loginView = document.getElementById('login-view');
-    const userSessionDisplay = document.getElementById('user-session');
-    const userInfoDisplay = document.getElementById('user-info');
-    const lockBanner = document.getElementById('lock-banner');
-    const adminTab = document.getElementById('admin-tab');
-
-    // --- Role-Based Access Control ---
-    const applyRoleBasedAccess = (user: UserProfile | null) => {
-        if (!user) return;
-
-        // Admin sees all
-        if (user.especialidad === 'Administrador') {
-            const allInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement>('#app-container form input, #app-container form textarea, #app-container form select, #app-container form button');
-            allInputs.forEach(el => { el.disabled = false; });
-            return;
-        }
-
-        const allInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement>('#app-container form input, #app-container form textarea, #app-container form select, #app-container form button');
-        allInputs.forEach(el => {
-            el.disabled = true;
-        });
-
-        const rolePermissions: { [key: string]: string[] } = {
-            'Administrativo': ['administrativo'],
-            'Enfermero': ['enfermero'],
-            'Anestesista': ['anestesista'],
-            'Médico': ['medico']
-        };
-
-        const userRoles = rolePermissions[user.especialidad] || [];
-
-        userRoles.forEach(role => {
-            const sections = document.querySelectorAll(`[data-role="${role}"]`);
-            sections.forEach(section => {
-                const inputs = section.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement>('input, textarea, select, button');
-                inputs.forEach(input => {
-                    input.disabled = false;
-                });
-            });
-        });
-    };
-    
-    // --- Form Locking Logic ---
-    const unlockForm = () => {
-        if (lockBanner) lockBanner.style.display = 'none';
-
-        const generateBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
-        const importBtn = document.getElementById('import-clinic-btn') as HTMLButtonElement;
-        const exportBtn = document.getElementById('export-clinic-btn') as HTMLButtonElement;
-        
-        if(generateBtn) generateBtn.disabled = false;
-        if(importBtn) importBtn.disabled = false;
-        if(exportBtn) exportBtn.disabled = false;
-
-        applyRoleBasedAccess(getCurrentUser());
-    };
-
-    const lockForm = (timestamp: number) => {
-        if (lockBanner) {
-            const lockDate = new Date(timestamp).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
-            lockBanner.innerHTML = `Este registro fue cerrado el ${lockDate} y ya no puede ser modificado.`;
-            lockBanner.style.display = 'block';
-        }
-
-        const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-        allForms.forEach(form => {
-            const elements = form.querySelectorAll('input, textarea, select, button');
-            elements.forEach(el => (el as HTMLInputElement).disabled = true);
-        });
-
-        const generateBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
-        const importBtn = document.getElementById('import-clinic-btn') as HTMLButtonElement;
-        const exportBtn = document.getElementById('export-clinic-btn') as HTMLButtonElement;
-
-        if (generateBtn) generateBtn.disabled = true;
-        if (importBtn) importBtn.disabled = true;
-        if (exportBtn) exportBtn.disabled = true;
-    };
-
-
-    // --- View Toggling Functions ---
-    const showLoginView = () => {
-        if (loginView) loginView.style.display = 'block';
-        if (authContainer) authContainer.style.display = 'flex';
-        if (appContainer) appContainer.style.display = 'none';
-        if (userSessionDisplay) userSessionDisplay.style.display = 'none';
-    };
-
-    const showAppView = async (user: UserProfile) => {
-        if (authContainer) authContainer.style.display = 'none';
-        if (appContainer) appContainer.style.display = 'block';
-        if (userSessionDisplay) userSessionDisplay.style.display = 'flex';
-        if (userInfoDisplay) userInfoDisplay.textContent = `Bienvenido(a), ${user.nombre} ${user.apellido} (${user.especialidad})`;
-        
-        // Show/hide admin tab based on role OR if no admin exists yet
-        if (adminTab) {
-            const adminExists = await apiDoesAdminExist();
-            adminTab.style.display = (user.especialidad === 'Administrador' || !adminExists) ? 'block' : 'none';
-        }
-
-        // Change button text based on user role
-        const generateAltaBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
-        if (generateAltaBtn) {
-            if (user.especialidad === 'Médico' || user.especialidad === 'Administrador') {
-                generateAltaBtn.textContent = 'Generar Alta y PDF';
-            } else if (user.especialidad === 'Administrativo') {
-                generateAltaBtn.textContent = 'Generar PDF';
-            }
-        }
-
-        unlockForm();
-        applyRoleBasedAccess(user);
-    };
-
-    // --- Authentication Logic ---
-    const getCurrentUser = (): UserProfile | null => {
-        return currentUser;
-    }
-
-    const updateUserSession = async (profile: UserProfile | null) => {
-        currentUser = profile;
-        if (profile) {
-            await showAppView(profile);
-        } else {
-            showLoginView();
-        }
-    };
-    
-    // --- Event Listeners for Auth ---
-    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
-        const usernameOrEmail = (document.getElementById('login-username-email') as HTMLInputElement).value;
-        const password = (document.getElementById('login-password') as HTMLInputElement).value;
-        const loginError = document.getElementById('login-error') as HTMLParagraphElement;
-        
-        // Reset state before attempt
-        submitButton.disabled = true;
-        submitButton.textContent = 'Ingresando...';
-        loginError.style.display = 'none';
-        
-        try {
-            await apiLogin(usernameOrEmail, password);
-            // On success, we intentionally do nothing here.
-            // The onAuthStateChange listener will handle the UI transition.
-            // The button will remain in the "Ingresando..." state until the view changes,
-            // which provides clear feedback to the user.
-        } catch (error: any) {
-            console.error('Login failed:', error);
-            
-            // Display the error message from our API layer or Supabase
-            loginError.textContent = error.message;
-            loginError.style.display = 'block';
-            
-            // IMPORTANT: Reset the button ONLY on error so the user can try again.
-            submitButton.disabled = false;
-            submitButton.textContent = 'Ingresar';
-        }
-    });
-    
-    document.getElementById('logout-btn')?.addEventListener('click', async () => {
-        try {
-            await apiLogout();
-            // Force a full page reload to completely reset the application and Supabase client state.
-            // This ensures a clean slate for the next login, preventing the "stuck button" issue.
-            window.location.reload();
-        } catch (error) {
-            console.error("Logout failed:", error);
-            alert("Error al cerrar sesión.");
-        }
-    });
-
-    // --- Initial Check & Session Management ---
-    // This listener is now the SINGLE SOURCE OF TRUTH for the application's UI state based on auth.
-    supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
-            try {
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                
-                // This is the critical failure case that was previously silent.
-                if (profileError || !profile) {
-                    console.error("CRITICAL: User is authenticated but profile is missing. Forcing sign-out.", { userId: session.user.id, profileError });
-
-                    // Log the user out to prevent a broken session state.
-                    await apiLogout();
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section id="hd-page-3" class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="hd-cabeza-cuello">Cabeza y Cuello</label><textarea id="hd-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-respiratorio">Aparato Respiratorio</label><textarea id="hd-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="hd-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-digestivo">Aparato Digestivo</label><textarea id="hd-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-locomotor">Aparato Locomotor</label><textarea id="hd-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-aparato-genitourinario">Aparato Genitourinario</label><textarea id="hd-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-sistema-nervioso">Sistema Nervioso</label><textarea id="hd-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-observaciones">Observaciones</label><textarea id="hd-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-estudios-complementarios">Estudios Complementarios</label><textarea id="hd-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="hd-tratamiento">Tratamiento</label><textarea id="hd-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
                     
-                    // Now, provide clear feedback on the login screen.
-                    const loginError = document.getElementById('login-error') as HTMLParagraphElement;
-                    if (loginError) {
-                        loginError.textContent = "El perfil del usuario no fue encontrado. Por favor, contacte a un administrador.";
-                        loginError.style.display = 'block';
-                    }
+                    <!-- PAGE 4: SURGICAL REPORT -->
+                    <section id="hd-page-4" class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico Hoja 2</h3>
+                        <div class="form-group full-width"><label for="hd-paciente-4">Paciente</label><input type="text" id="hd-paciente-4" name="Paciente (Quirúrgico)" required></div>
+                        <div class="form-group full-width"><label for="hd-reporte-quirurgico">Descripción Quirúrgica</label><textarea id="hd-reporte-quirurgico" name="Reporte Quirúrgico" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
                     
-                    // And ensure the login button is reset.
-                    const submitButton = document.querySelector('#login-form button[type="submit"]') as HTMLButtonElement;
-                    if (submitButton) {
-                        submitButton.disabled = false;
-                        submitButton.textContent = 'Ingresar';
-                    }
+                    <!-- PAGE 5: MEDICAL PRACTICES -->
+                    <section id="hd-page-5" class="form-section" data-role="medico">
+                        <h3>Prácticas Médicas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="hd-paciente-5">Paciente</label><input type="text" id="hd-paciente-5" name="Paciente (Prácticas)" required></div>
+                            <div class="form-group"><label for="hd-medico-cabecera">Médico de Cabecera</label><input type="text" id="hd-medico-cabecera" name="Médico de Cabecera" required></div>
+                        </div>
+                        <div class="table-container">
+                            <table class="practicas-medicas-table" data-table-name="practicasMedicas">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Código</th>
+                                        <th>Descripción</th>
+                                        <th>Cant.</th>
+                                        <th>Observación</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-practica-row">Agregar Fila</button>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-medico-4"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-medico-4">Firmar Sección</button>
+                        </div>
+                    </section>
                     
-                    // Don't continue to updateUserSession, as the logout will trigger another auth state change.
-                    return;
-                }
+                    <!-- PAGE 6: NURSING CONTROL -->
+                    <section id="hd-page-6" class="form-section" data-role="enfermero">
+                        <h3>Control de Enfermería</h3>
+                        <div class="form-group full-width"><label for="hd-paciente-6">Paciente</label><input type="text" id="hd-paciente-6" name="Paciente (Enfermería)" required></div>
+                        <div class="table-container">
+                            <table class="enfermeria-table" data-table-name="enfermeria">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Hora</th>
+                                        <th>T.A.</th>
+                                        <th>F.C.</th>
+                                        <th>F.R.</th>
+                                        <th>Temp.</th>
+                                        <th>Observaciones</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-enfermeria-row">Agregar Fila</button>
+                        <div class="signature-area">
+                            <div class="signature-display" id="hd-sig-enfermero"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="hd-sig-enfermero">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
 
-                // If profile is found, proceed to show the app.
-                await updateUserSession(profile as UserProfile);
+            <!-- Grupo Endoscópico Form -->
+            <div id="grupo-endoscopico" class="tab-content">
+                <form id="ge-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section id="ge-page-1" class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-medico">Médico</label><input type="text" id="ge-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="ge-hc-n">HC N°</label><input type="text" id="ge-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="ge-apellido">Apellido</label><input type="text" id="ge-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="ge-edad">Edad</label><input type="number" id="ge-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="ge-nombres">Nombres</label><input type="text" id="ge-nombres" name="Nombres" required></div>
+                            <div class="form-group">
+                                <label for="ge-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="ge-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="ge-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="ge-domicilio">Domicilio</label><input type="text" id="ge-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="ge-telefono">Teléfono</label><input type="tel" id="ge-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="ge-estado-civil">Estado Civil</label><input type="text" id="ge-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="ge-cob-social">Cob. Social</label><input type="text" id="ge-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="ge-n-afiliado">N° Afiliado</label><input type="text" id="ge-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="ge-iva">Condición frente al IVA</label><input type="text" id="ge-iva" name="Condición IVA" required></div>
+                        </div>
 
-            } catch (error) {
-                console.error("Error processing authenticated session:", error);
-                await apiLogout(); // Fallback to sign out on any other unexpected error.
-            }
-        } else {
-            // User is not signed in or has signed out.
-            await updateUserSession(null);
-        }
-    });
-    
-    // --- Helper function to convert file to Base64 ---
-    const fileToBase64 = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = error => reject(error);
-        });
-    };
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="ge-fam-nombre">Apellido y Nombre</label><input type="text" id="ge-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="ge-fam-domicilio">Domicilio</label><input type="text" id="ge-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="ge-fam-tel">Tel.</label><input type="tel" id="ge-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="ge-fam-dni">DNI</label><input type="text" id="ge-fam-dni" name="Familiar DNI" required></div>
+                        </div>
 
-    // --- Admin Panel Logic ---
-    const populateUsersTable = async () => {
-        const tableBody = document.getElementById('users-table-body');
-        if (!tableBody) return;
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="ge-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="ge-hora-ingreso">Hora</label><input type="time" id="ge-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="ge-fecha-egreso">Fecha de Egreso</label><input type="date" id="ge-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="ge-hora-egreso">Hora</label><input type="time" id="ge-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
 
-        try {
-            const users = await apiGetAllUsers();
-            tableBody.innerHTML = ''; // Clear existing rows
-            users.forEach(user => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${user.nombre} ${user.apellido}</td>
-                    <td>${user.username}</td>
-                    <td>${user.especialidad}</td>
-                `;
-                tableBody.appendChild(row);
-            });
-        } catch (error) {
-            console.error("Could not populate users table", error);
-            tableBody.innerHTML = `<tr><td colspan="3">Error al cargar usuarios.</td></tr>`;
-        }
-    };
+                    <!-- PAGE 2: ADMISSION -->
+                    <section id="ge-page-2" class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-paciente-2">Paciente</label><input type="text" id="ge-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="ge-hc-2">HC</label><input type="text" id="ge-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="ge-servicio">Servicio</label><input type="text" id="ge-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="ge-habitacion">Habitación</label><input type="text" id="ge-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="ge-cama">Cama</label><input type="text" id="ge-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="ge-fecha-2">Fecha</label><input type="date" id="ge-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ge-motivo-internacion">Motivo de Internación</label><textarea id="ge-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="ge-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-estado-actual">Estado Actual</label><textarea id="ge-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-antecedentes">Antecedentes</label><textarea id="ge-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
 
-    document.getElementById('create-user-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const form = e.target as HTMLFormElement;
-        const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
-        const errorEl = document.getElementById('create-user-error') as HTMLParagraphElement;
-        const successEl = document.getElementById('create-user-success') as HTMLParagraphElement;
-    
-        errorEl.style.display = 'none';
-        successEl.style.display = 'none';
-        submitButton.disabled = true;
-        submitButton.textContent = 'Creando...';
-    
-        try {
-            const username = (document.getElementById('create-username') as HTMLInputElement).value.trim();
-            const password = (document.getElementById('create-password') as HTMLInputElement).value;
-            const nombre = (document.getElementById('create-nombre') as HTMLInputElement).value;
-            const apellido = (document.getElementById('create-apellido') as HTMLInputElement).value;
-            const especialidad = (document.getElementById('create-especialidad') as HTMLSelectElement).value;
-            const matricula = (document.getElementById('create-matricula') as HTMLInputElement).value;
-            const firmaInput = (document.getElementById('create-firma') as HTMLInputElement);
-    
-            if (!username || !password || !nombre || !apellido || !especialidad) {
-                throw new Error("Por favor, complete todos los campos obligatorios.");
-            }
-    
-            let firmaBase64: string | undefined = undefined;
-            if (firmaInput.files && firmaInput.files[0]) {
-                firmaBase64 = await fileToBase64(firmaInput.files[0]);
-            }
-    
-            // This is the data for the public 'profiles' table.
-            const profileData = {
-                username,
-                nombre,
-                apellido,
-                especialidad,
-                matricula: matricula || undefined,
-                firma: firmaBase64
-            };
-    
-            // Call the API function with the structure expected by the Edge Function.
-            await apiCreateUser({ username, password, profileData });
-    
-            successEl.textContent = `Usuario "${username}" creado exitosamente.`;
-            successEl.style.display = 'block';
-            form.reset();
-            await populateUsersTable();
-    
-        } catch (error: any) {
-            console.error("User creation failed:", error);
-            errorEl.textContent = `Error al crear usuario: ${error.message}`;
-            errorEl.style.display = 'block';
-        } finally {
-            submitButton.disabled = false;
-            submitButton.textContent = 'Crear Usuario';
-        }
-    });
-
-    document.getElementById('create-especialidad')?.addEventListener('change', (e) => {
-        const select = e.target as HTMLSelectElement;
-        const matriculaGroup = document.getElementById('create-matricula-group');
-        if (matriculaGroup) {
-            const medicalRoles = ['Médico', 'Enfermero', 'Anestesista'];
-            matriculaGroup.style.display = medicalRoles.includes(select.value) ? 'block' : 'none';
-        }
-    });
-
-
-    // --- Tabbed Interface Logic ---
-    const tabs = document.querySelectorAll('.tab-link');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabs.forEach(tab => {
-        tab.addEventListener('click', async () => {
-            const targetId = tab.getAttribute('data-tab');
-            
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            
-            tabContents.forEach(content => {
-                content.classList.remove('active');
-                if (content.id === targetId) {
-                    content.classList.add('active');
-                }
-            });
-            const user = getCurrentUser();
-            if(user) applyRoleBasedAccess(user);
-
-            // If admin tab is clicked, load users
-            if (targetId === 'admin-usuarios') {
-                await populateUsersTable();
-            }
-        });
-    });
-    
-    // --- Centralized Patient Data Loading Logic ---
-    const populateForm = (form: HTMLFormElement, formData: any) => {
-        const prefix = form.id.replace('form', ''); // e.g., 'hd-', 'ge-'
-
-        Object.keys(formData).forEach(key => {
-            const element = document.getElementById(`${prefix}${key}`) as HTMLInputElement;
-            if (element) {
-                if (element.type === 'checkbox') {
-                    element.checked = formData[key];
-                } else {
-                    element.value = formData[key];
-                }
-            }
-        });
-
-        const tables = form.querySelectorAll('table[data-table-name]');
-        tables.forEach(table => {
-            const tableName = (table as HTMLElement).dataset.tableName;
-            const tableData = tableName ? formData[tableName] : null;
-            const tableBody = table.querySelector('tbody');
-
-            if (tableData && tableBody) {
-                tableBody.innerHTML = ''; // Clear existing rows
-                const addRowButtonClass = table.closest('.form-section')?.querySelector('button[class*="add-"]')?.classList.toString().match(/add-[\w-]+-row/)?.[0];
-
-                (tableData as any[]).forEach(rowData => {
-                    if (addRowButtonClass) {
-                        const addButton = document.createElement('button');
-                        addButton.style.display = 'none';
-                        addButton.classList.add(addRowButtonClass);
-                        form.appendChild(addButton);
-                        addButton.click();
-                        addButton.remove();
-                       
-                        const newRow = tableBody.querySelector('tr:last-child');
-                        if (newRow) {
-                            Object.keys(rowData).forEach(inputName => {
-                                const input = newRow.querySelector(`[name="${inputName}"]`) as HTMLInputElement;
-                                if (input) input.value = rowData[inputName];
-                            });
-                        }
-                    }
-                });
-            }
-        });
-    };
-    
-    const loadPatientDataIntoForms = (patientData: any) => {
-        unlockForm();
-        const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-        allForms.forEach(form => form.reset());
-
-        Object.keys(patientData).forEach(tabId => {
-            if (tabId === 'dischargeTimestamp') return;
-
-            const form = document.querySelector(`#${tabId} form`) as HTMLFormElement;
-            const dataForTab = patientData[tabId];
-
-            if (form && dataForTab) {
-                populateForm(form, dataForTab);
-            }
-        });
-
-        const firstFormPrefix = document.querySelector<HTMLFormElement>('#app-container form')?.id.replace('form', '');
-        if (firstFormPrefix) {
-            const apellidoEl = document.getElementById(`${firstFormPrefix}apellido`);
-            const nombresEl = document.getElementById(`${firstFormPrefix}nombres`);
-            apellidoEl?.dispatchEvent(new Event('input', { bubbles: true }));
-            nombresEl?.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        if (patientData.dischargeTimestamp) {
-            const twentyFourHours = 24 * 60 * 60 * 1000;
-            if (Date.now() - patientData.dischargeTimestamp > twentyFourHours) {
-                lockForm(patientData.dischargeTimestamp);
-            }
-        }
-    };
-
-
-    // --- Dynamic Table & Signature Logic (Event Delegation) ---
-    document.body.addEventListener('click', async (e) => {
-        const target = e.target as HTMLElement;
-
-        if (target.classList.contains('sign-section-btn')) {
-            const user = getCurrentUser();
-            if (!user || !user.firma) {
-                alert('No se encontró una firma registrada. Por favor, asegúrese de haber subido una firma en su perfil.');
-                return;
-            }
-
-            const targetId = target.getAttribute('data-target-id');
-            if (!targetId) return;
-
-            const signatureDisplay = document.getElementById(targetId);
-            if (signatureDisplay) {
-                signatureDisplay.innerHTML = '';
-                const signatureImg = document.createElement('img');
-                signatureImg.src = user.firma;
-                signatureImg.alt = `Firma de ${user.nombre} ${user.apellido}`;
-                signatureDisplay.appendChild(signatureImg);
-            }
-        }
-
-        if (target.classList.contains('add-practica-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.practicas-medicas-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="date" name="Practica Fecha" required></td>
-                <td><input type="text" name="Practica Código" required></td>
-                <td><input type="text" name="Practica Descripción" required></td>
-                <td><input type="number" name="Practica Cantidad" required></td>
-                <td><input type="text" name="Practica Observación" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
-        }
-
-        if (target.classList.contains('add-enfermeria-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.enfermeria-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="date" name="Enfermeria Fecha" required></td>
-                <td><input type="time" name="Enfermeria Hora" required></td>
-                <td><input type="text" name="Enfermeria TA" required></td>
-                <td><input type="text" name="Enfermeria FC" required></td>
-                <td><input type="text" name="Enfermeria FR" required></td>
-                <td><input type="text" name="Enfermeria Temp" required></td>
-                <td><input type="text" name="Enfermeria Observaciones" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
-        }
-        
-        if (target.classList.contains('add-monitoreo-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.monitoreo-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="time" name="Monitoreo Hora" required></td>
-                <td><input type="number" name="Monitoreo Sistolica" required></td>
-                <td><input type="number" name="Monitoreo Diastolica" required></td>
-                <td><input type="number" name="Monitoreo Pulso" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
-        }
-
-        if (target.classList.contains('add-prescripcion-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.prescripciones-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="date" name="Prescripcion Fecha" required></td>
-                <td><input type="text" name="Prescripcion Indicaciones" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
-        }
-
-        if (target.classList.contains('delete-row-btn')) {
-            target.closest('tr')?.remove();
-        }
-
-        if (target.classList.contains('load-patient-btn')) {
-            const loadButton = target as HTMLButtonElement;
-            loadButton.disabled = true;
-            loadButton.textContent = 'Cargando...';
-
-            const dniInput = target.previousElementSibling as HTMLInputElement;
-            if (!dniInput) return;
-
-            const dni = dniInput.value.trim();
-            if (!dni) {
-                alert('Por favor, ingrese un DNI para buscar.');
-                loadButton.disabled = false;
-                loadButton.textContent = 'Cargar';
-                return;
-            }
-
-            try {
-                const patientData = await apiGetPatientByDni(dni);
-
-                if (!patientData) {
-                    alert('No se encontraron datos para este DNI. Puede crear un nuevo registro.');
-                    const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-                    forms.forEach(form => form.reset());
-                    unlockForm();
-                    // Set the DNI in the active form for a new patient
-                    dniInput.value = dni;
-                    return;
-                }
-                
-                loadPatientDataIntoForms(patientData);
-                alert('Datos del paciente cargados en todas las secciones.');
-            } catch (error) {
-                alert('Error al cargar los datos del paciente.');
-                console.error("Failed to load patient:", error);
-            } finally {
-                loadButton.disabled = false;
-                loadButton.textContent = 'Cargar';
-            }
-        }
-    });
-
-    // --- Patient Name Auto-Population Logic ---
-    const syncPatientNames = (prefix: string) => {
-        const apellidoEl = document.getElementById(`${prefix}-apellido`) as HTMLInputElement;
-        const nombresEl = document.getElementById(`${prefix}-nombres`) as HTMLInputElement;
-
-        if (!apellidoEl || !nombresEl) return;
-
-        const updateDerivedPatientFields = () => {
-            const apellido = apellidoEl.value.trim();
-            const nombres = nombresEl.value.trim();
-            const fullName = [apellido, nombres].filter(Boolean).join(', ');
-
-            const targetIds = [
-                'paciente-2', 'paciente-4', 'paciente-5', 'paciente-6',
-                'paciente-evolucion', 'paciente-report',
-                'paciente-presc', 'paciente-practicas', 'paciente-enfermeria',
-                'paciente-anest'
-            ];
-
-            targetIds.forEach(idSuffix => {
-                const targetEl = document.getElementById(`${prefix}-${idSuffix}`) as HTMLInputElement;
-                if (targetEl) {
-                    targetEl.value = fullName;
-                }
-            });
-        };
-
-        apellidoEl.addEventListener('input', updateDerivedPatientFields);
-        nombresEl.addEventListener('input', updateDerivedPatientFields);
-    };
-
-    ['hd', 'ge', 'cg', 'ca'].forEach(syncPatientNames);
-    
-    // --- Import / Export Logic ---
-    const fileInput = document.getElementById('import-clinic-input') as HTMLInputElement;
-
-    document.getElementById('import-clinic-btn')?.addEventListener('click', () => {
-        fileInput?.click();
-    });
-
-    document.getElementById('export-clinic-btn')?.addEventListener('click', async () => {
-        const dniInput = document.querySelector('input[id$="-dni"]:not([value=""])') as HTMLInputElement;
-        const dni = dniInput?.value.trim();
-
-        if (!dni) {
-            alert('No hay un paciente cargado. Por favor, cargue un paciente por DNI antes de exportar.');
-            return;
-        }
-        try {
-            const patientData = await apiGetPatientByDni(dni);
-
-            if (!patientData) {
-                alert('No se encontraron datos para exportar para el DNI actual.');
-                return;
-            }
-
-            const dataStr = JSON.stringify(patientData, null, 2);
-            const blob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `paciente-${dni}.clinic`;
-            document.body.appendChild(link);
-            link.click();
-            
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch(error) {
-            alert('Error al exportar los datos.');
-            console.error('Export failed', error);
-        }
-    });
-    
-    fileInput?.addEventListener('change', (event) => {
-        const target = event.target as HTMLInputElement;
-        const file = target.files?.[0];
-
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const text = e.target?.result as string;
-                const importedData = JSON.parse(text);
-                
-                let dni = '';
-                const mainTabs = ['hemodinamia', 'grupo-endoscopico', 'cirugias', 'cirugia-anestesia'];
-                for (const tab of mainTabs) {
-                    if (importedData[tab]?.dni) {
-                        dni = importedData[tab].dni;
-                        break;
-                    }
-                }
-                
-                if (!dni) {
-                    throw new Error('No se pudo encontrar un DNI en el archivo importado.');
-                }
-
-                await apiSavePatient(dni, importedData);
-                loadPatientDataIntoForms(importedData);
-                
-                alert(`Datos del paciente con DNI ${dni} importados y cargados exitosamente.`);
-
-            } catch (error: any) {
-                console.error('Error al importar archivo:', error);
-                alert(`Hubo un error al procesar el archivo .clinic. Asegúrese de que el formato sea correcto. Detalles: ${error.message}`);
-            } finally {
-                target.value = '';
-            }
-        };
-
-        reader.onerror = () => {
-            alert('Error al leer el archivo.');
-            target.value = '';
-        };
-
-        reader.readAsText(file);
-    });
-
-    // --- PDF Generation Logic ---
-    const generateAltaBtn = document.getElementById('generate-alta-btn');
-    
-    const setDischargeTimestamp = async () => {
-        const activeContent = document.querySelector('.tab-content.active');
-        const dniInput = activeContent?.querySelector('input[id$="-dni"]') as HTMLInputElement;
-        if (dniInput) {
-            const dni = dniInput.value.trim();
-            if (!dni) return;
-
-            try {
-                const patientData = await apiGetPatientByDni(dni) || {};
-                
-                // Save all current form data before setting the timestamp
-                const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-                allForms.forEach(form => {
-                    const tabId = form.closest('.tab-content')?.id;
-                    if (!tabId) return;
-
-                    const prefix = form.id.replace('form', '');
-                    const formData: { [key: string]: any } = {};
-                    const elements = form.elements;
-                    for (let i = 0; i < elements.length; i++) {
-                        const item = elements[i] as HTMLInputElement;
-                        if (item.id && item.id.startsWith(prefix)) {
-                            const key = item.id.substring(prefix.length);
-                            if (item.type === 'checkbox') {
-                                formData[key] = item.checked;
-                            } else {
-                                formData[key] = item.value;
-                            }
-                        }
-                    }
-                     form.querySelectorAll('table[data-table-name]').forEach(table => {
-                        const tableName = (table as HTMLElement).dataset.tableName;
-                        if(!tableName) return;
-                        const tableData: any[] = [];
-                        table.querySelectorAll('tbody tr').forEach(row => {
-                            const rowData: { [key: string]: any } = {};
-                            row.querySelectorAll('input, select, textarea').forEach(input => {
-                                const el = input as HTMLInputElement;
-                                if (el.name) rowData[el.name] = el.value;
-                            });
-                            tableData.push(rowData);
-                        });
-                        formData[tableName] = tableData;
-                    });
-                    patientData[tabId] = formData;
-                });
-
-                if (!patientData.dischargeTimestamp) {
-                    patientData.dischargeTimestamp = Date.now();
-                    await apiSavePatient(dni, patientData);
-                    alert('Alta generada exitosamente. Este registro se bloqueará para edición en 24 horas.');
-                } else {
-                     await apiSavePatient(dni, patientData); // Save data even if timestamp exists
-                }
-            } catch (error) {
-                console.error('Failed to set discharge timestamp', error);
-                alert('Error al registrar la fecha de alta.');
-            }
-        }
-    };
-
-    generateAltaBtn?.addEventListener('click', async () => {
-        const btn = generateAltaBtn as HTMLButtonElement;
-        
-        const activeContent = document.querySelector('.tab-content.active');
-        const form = activeContent?.querySelector('form');
-        if (!form || !form.checkValidity()) {
-            alert('Por favor, complete todos los campos obligatorios antes de generar el PDF.');
-            form?.reportValidity();
-            return;
-        }
-
-        const originalButtonText = btn.textContent;
-        btn.textContent = 'Generando...';
-        btn.disabled = true;
-        
-        const user = getCurrentUser();
-
-        try {
-            if (!activeContent || !user) {
-                throw new Error("No active tab content found or user not logged in");
-            }
-            
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pageHeight = pdf.internal.pageSize.getHeight();
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const margin = 15;
-            const fieldMargin = 45;
-            const lineSpacing = 8;
-            let y = 0;
-
-            const drawHeader = () => {
-                const logoY = 20;
-                const logoRadius = 7;
-                pdf.setFontSize(16);
-                const titleText = 'CLINICA DEL SOL';
-                const titleWidth = pdf.getTextWidth(titleText);
-                const logoWidth = logoRadius*2 ;
-                const gap = 8;
-                const totalWidth = logoWidth + gap + titleWidth;
-                const startX = (pageWidth - totalWidth) / 2;
-                const logoX = startX + logoRadius;
-                const textX = startX + logoWidth + gap;
-                pdf.setFillColor(56, 186, 234);
-                pdf.circle(logoX, logoY, logoRadius, 'F');
-                pdf.setDrawColor(255, 255, 255);
-                pdf.setLineWidth(1.5);
-                const crossSize = logoRadius * 0.5;
-                pdf.line(logoX, logoY - crossSize, logoX, logoY + crossSize);
-                pdf.line(logoX - crossSize, logoY, logoX + crossSize, logoY);
-                pdf.setFontSize(16);
-                pdf.setTextColor(0, 174, 239);
-                pdf.text(titleText, textX, logoY, { baseline: 'middle' });
-                pdf.setFontSize(10);
-                pdf.setTextColor(101, 119, 134);
-                pdf.text('CLINICA PRIVADA', textX, logoY + 7);
-                const headerBottomY = logoY + logoRadius + 8;
-                pdf.setDrawColor(225, 232, 237);
-                pdf.setLineWidth(0.5);
-                pdf.line(margin, headerBottomY, pageWidth - margin, headerBottomY);
-                pdf.setDrawColor(0,0,0);
-                pdf.setTextColor(0,0,0);
-                pdf.setLineWidth(0.2); 
-            };
-            const drawField = (label: string, value: string, yPos: number, xStart: number = margin, xValStart?: number) => {
-                pdf.text(label, xStart, yPos);
-                pdf.text(value, xValStart || (xStart + fieldMargin), yPos);
-            };
-            const drawCenteredField = (label: string, value: string, yPos: number) => {
-                pdf.setFontSize(10);
-                const gap = 4;
-                const labelWidth = pdf.getTextWidth(label);
-                const labelX = (pageWidth / 2) - (gap / 2) - labelWidth;
-                const valueX = (pageWidth / 2) + (gap / 2);
-                pdf.text(label, labelX, yPos);
-                pdf.text(value, valueX, yPos);
-            };
-            const drawTextArea = (label: string, textContent: string[], startY: number, numLines: number) => {
-                pdf.text(label, margin, startY);
-                pdf.setLineDashPattern([1, 1], 0);
-                let lineY = startY + 4;
-                const lineHeight = 5;
-                for (let i = 0; i < numLines; i++) {
-                    const middleY = lineY + lineHeight / 2;
-                    if (i < textContent.length) {
-                        pdf.text(textContent[i], margin, middleY, { baseline: 'middle', maxWidth: pageWidth - margin * 2 });
-                    }
-                    pdf.line(margin, lineY, pageWidth - margin, lineY);
-                    lineY += lineHeight;
-                }
-                pdf.setLineDashPattern([], 0);
-                return lineY + 4;
-            };
-            const drawUserSignature = () => {
-                const loggedInUser = getCurrentUser();
-                if (loggedInUser) {
-                    const signatureY = pageHeight - 25;
-                    const signatureXStart = pageWidth - margin - 70;
-                    pdf.setDrawColor(150);
-                    pdf.line(signatureXStart, signatureY, pageWidth - margin, signatureY);
-            
-                    if (loggedInUser.firma) {
-                        try {
-                            const signatureWidth = 35;
-                            const signatureHeight = 12;
-                            pdf.addImage(loggedInUser.firma, 'PNG', signatureXStart + 5, signatureY - signatureHeight, signatureWidth, signatureHeight);
-                        } catch (e) {
-                            console.error("Could not add signature image to PDF", e);
-                        }
-                    }
-            
-                    pdf.setFontSize(8).setTextColor(100);
-                    const signatureText = `${loggedInUser.nombre} ${loggedInUser.apellido}`;
-                    const specialtyText = `(${loggedInUser.especialidad})`;
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section id="ge-page-3" class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="ge-cabeza-cuello">Cabeza y Cuello</label><textarea id="ge-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-respiratorio">Aparato Respiratorio</label><textarea id="ge-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="ge-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-digestivo">Aparato Digestivo</label><textarea id="ge-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-locomotor">Aparato Locomotor</label><textarea id="ge-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-aparato-genitourinario">Aparato Genitourinario</label><textarea id="ge-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-sistema-nervioso">Sistema Nervioso</label><textarea id="ge-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-observaciones">Observaciones</label><textarea id="ge-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-estudios-complementarios">Estudios Complementarios</label><textarea id="ge-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ge-tratamiento">Tratamiento</label><textarea id="ge-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
                     
-                    pdf.text(signatureText, signatureXStart, signatureY + 4);
-                    pdf.text(specialtyText, signatureXStart, signatureY + 8);
+                    <!-- PAGE 4: EVOLUCION -->
+                    <section id="ge-page-4" class="form-section" data-role="medico">
+                        <h3>Evolución</h3>
+                        <div class="form-group full-width"><label for="ge-paciente-evolucion">Paciente</label><input type="text" id="ge-paciente-evolucion" name="Paciente (Evolución)" required></div>
+                        <div class="form-group full-width"><label for="ge-evolucion-notas">Notas de Evolución</label><textarea id="ge-evolucion-notas" name="Evolución Notas" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 5: REPORT -->
+                    <section id="ge-page-5" class="form-section" data-role="enfermero">
+                        <h3>Report</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ge-paciente-report">Paciente</label><input type="text" id="ge-paciente-report" name="Paciente (Report)" required></div>
+                            <div class="form-group"><label for="ge-fecha-report">Fecha</label><input type="date" id="ge-fecha-report" name="Fecha (Report)" required></div>
+                            <div class="form-group"><label for="ge-sala-report">Sala</label><input type="text" id="ge-sala-report" name="Sala (Report)" required></div>
+                            <div class="form-group"><label for="ge-cama-report">Cama</label><input type="text" id="ge-cama-report" name="Cama (Report)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ge-report-contenido">Contenido del Reporte</label><textarea id="ge-report-contenido" name="Report Contenido" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ge-sig-enfermero"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ge-sig-enfermero">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+
+            <!-- Cirugías Form -->
+            <div id="cirugias" class="tab-content">
+                <form id="cg-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section id="cg-page-1" class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-medico">Médico</label><input type="text" id="cg-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="cg-hc-n">HC N°</label><input type="text" id="cg-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="cg-apellido">Apellido</label><input type="text" id="cg-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="cg-edad">Edad</label><input type="number" id="cg-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="cg-nombres">Nombres</label><input type="text" id="cg-nombres" name="Nombres" required></div>
+                             <div class="form-group">
+                                <label for="cg-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="cg-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="cg-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="cg-domicilio">Domicilio</label><input type="text" id="cg-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="cg-telefono">Teléfono</label><input type="tel" id="cg-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="cg-estado-civil">Estado Civil</label><input type="text" id="cg-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="cg-cob-social">Cob. Social</label><input type="text" id="cg-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="cg-n-afiliado">N° Afiliado</label><input type="text" id="cg-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="cg-iva">Condición frente al IVA</label><input type="text" id="cg-iva" name="Condición IVA" required></div>
+                        </div>
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="cg-fam-nombre">Apellido y Nombre</label><input type="text" id="cg-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="cg-fam-domicilio">Domicilio</label><input type="text" id="cg-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="cg-fam-tel">Tel.</label><input type="tel" id="cg-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="cg-fam-dni">DNI</label><input type="text" id="cg-fam-dni" name="Familiar DNI" required></div>
+                        </div>
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="cg-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="cg-hora-ingreso">Hora</label><input type="time" id="cg-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="cg-fecha-egreso">Fecha de Egreso</label><input type="date" id="cg-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="cg-hora-egreso">Hora</label><input type="time" id="cg-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 2: ADMISSION -->
+                    <section id="cg-page-2" class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-paciente-2">Paciente</label><input type="text" id="cg-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="cg-hc-2">HC</label><input type="text" id="cg-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="cg-servicio">Servicio</label><input type="text" id="cg-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="cg-habitacion">Habitación</label><input type="text" id="cg-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="cg-cama">Cama</label><input type="text" id="cg-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="cg-fecha-2">Fecha</label><input type="date" id="cg-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="cg-motivo-internacion">Motivo de Internación</label><textarea id="cg-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="cg-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-estado-actual">Estado Actual</label><textarea id="cg-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-antecedentes">Antecedentes</label><textarea id="cg-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section id="cg-page-3" class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="cg-cabeza-cuello">Cabeza y Cuello</label><textarea id="cg-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-respiratorio">Aparato Respiratorio</label><textarea id="cg-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="cg-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-digestivo">Aparato Digestivo</label><textarea id="cg-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-locomotor">Aparato Locomotor</label><textarea id="cg-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-aparato-genitourinario">Aparato Genitourinario</label><textarea id="cg-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-sistema-nervioso">Sistema Nervioso</label><textarea id="cg-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-observaciones">Observaciones</label><textarea id="cg-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-estudios-complementarios">Estudios Complementarios</label><textarea id="cg-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-tratamiento">Tratamiento</label><textarea id="cg-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 4: SURGICAL REPORT 1 -->
+                    <section id="cg-page-4" class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico</h3>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                            <div class="form-group"><label for="cg-paciente-4">Paciente</label><input type="text" id="cg-paciente-4" name="Paciente (PQ)" required></div>
+                            <div class="form-group"><label for="cg-grupo">Grupo</label><input type="text" id="cg-grupo" name="Grupo Sanguíneo" required></div>
+                            <div class="form-group"><label for="cg-rh">RH</label><input type="text" id="cg-rh" name="Factor RH" required></div>
+                        </div>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                             <div class="form-group"><label for="cg-servicio-4">Servicio</label><input type="text" id="cg-servicio-4" name="Servicio (PQ)" required></div>
+                            <div class="form-group"><label for="cg-hab-4">Hab.</label><input type="text" id="cg-hab-4" name="Habitación (PQ)" required></div>
+                            <div class="form-group"><label for="cg-cama-4">Cama</label><input type="text" id="cg-cama-4" name="Cama (PQ)" required></div>
+                        </div>
+                         <div class="form-grid">
+                            <div class="form-group"><label for="cg-fecha-cirugia">Fecha de Cirugía</label><input type="date" id="cg-fecha-cirugia" name="Fecha de Cirugía" required></div>
+                            <div class="form-group"><label for="cg-hora-cirugia">Hora</label><input type="time" id="cg-hora-cirugia" name="Hora de Cirugía" required></div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="cg-cirujano">Cirujano</label><input type="text" id="cg-cirujano" name="Cirujano" required></div>
+                            <div class="form-group"><label for="cg-ayudante1">Ayudante 1</label><input type="text" id="cg-ayudante1" name="Ayudante 1" required></div>
+                            <div class="form-group"><label for="cg-ayudante2">Ayudante 2</label><input type="text" id="cg-ayudante2" name="Ayudante 2" required></div>
+                             <div class="form-group"><label for="cg-pediatra">Pediatra</label><input type="text" id="cg-pediatra" name="Pediatra" required></div>
+                            <div class="form-group"><label for="cg-anestesista">Anestesista</label><input type="text" id="cg-anestesista" name="Anestesista" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="cg-diagnostico-preop">Diagnóstico Preoperatorio</label><textarea id="cg-diagnostico-preop" name="Diagnóstico Preoperatorio" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-operacion-practicada">Operación Practicada</label><textarea id="cg-operacion-practicada" name="Operación Practicada" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="cg-detalles-tecnica">Detalles de la Técnica</label><textarea id="cg-detalles-tecnica" name="Detalles de la Técnica" rows="6" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 5: SURGICAL REPORT 2 -->
+                    <section id="cg-page-5" class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico Hoja 2</h3>
+                        <div class="form-group full-width"><label for="cg-paciente-5">Paciente</label><input type="text" id="cg-paciente-5" name="Paciente (PQ2)" required></div>
+                        <div class="form-group full-width"><label for="cg-detalles-quirurgico-2">Detalles Quirúrgicos (Continuación)</label><textarea id="cg-detalles-quirurgico-2" name="Detalles Quirúrgicos Hoja 2" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-4"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-4">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 6: EVOLUCION -->
+                    <section id="cg-page-6" class="form-section" data-role="medico">
+                        <h3>Evolución</h3>
+                        <div class="form-group full-width"><label for="cg-paciente-evolucion">Paciente</label><input type="text" id="cg-paciente-evolucion" name="Paciente (Evolución)" required></div>
+                        <div class="form-group full-width"><label for="cg-evolucion-notas">Notas de Evolución</label><textarea id="cg-evolucion-notas" name="Evolución Notas" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="cg-sig-medico-5"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="cg-sig-medico-5">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+
+            <!-- Cirugia con Anestesia Form -->
+            <div id="cirugia-anestesia" class="tab-content">
+                <form id="ca-form">
+                    <!-- PAGE 1: PATIENT INFO -->
+                    <section class="form-section" data-role="administrativo">
+                        <h3>Datos del Paciente</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-medico">Médico</label><input type="text" id="ca-medico" name="Médico" required></div>
+                            <div class="form-group"><label for="ca-hc-n">HC N°</label><input type="text" id="ca-hc-n" name="HC N°" required></div>
+                            <div class="form-group"><label for="ca-apellido">Apellido</label><input type="text" id="ca-apellido" name="Apellido" required></div>
+                            <div class="form-group"><label for="ca-edad">Edad</label><input type="number" id="ca-edad" name="Edad" required></div>
+                            <div class="form-group"><label for="ca-nombres">Nombres</label><input type="text" id="ca-nombres" name="Nombres" required></div>
+                             <div class="form-group">
+                                <label for="ca-dni">DNI</label>
+                                <div class="input-with-button">
+                                    <input type="text" id="ca-dni" name="DNI" required>
+                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="ca-">Cargar</button>
+                                </div>
+                            </div>
+                            <div class="form-group full-width"><label for="ca-domicilio">Domicilio</label><input type="text" id="ca-domicilio" name="Domicilio" required></div>
+                            <div class="form-group"><label for="ca-telefono">Teléfono</label><input type="tel" id="ca-telefono" name="Teléfono" required></div>
+                            <div class="form-group"><label for="ca-estado-civil">Estado Civil</label><input type="text" id="ca-estado-civil" name="Estado Civil" required></div>
+                            <div class="form-group"><label for="ca-cob-social">Cob. Social</label><input type="text" id="ca-cob-social" name="Cobertura Social" required></div>
+                            <div class="form-group"><label for="ca-n-afiliado">N° Afiliado</label><input type="text" id="ca-n-afiliado" name="N° Afiliado" required></div>
+                            <div class="form-group full-width"><label for="ca-iva">Condición frente al IVA</label><input type="text" id="ca-iva" name="Condición IVA" required></div>
+                        </div>
+                        <h3>Familiar Responsable</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width"><label for="ca-fam-nombre">Apellido y Nombre</label><input type="text" id="ca-fam-nombre" name="Familiar Nombre" required></div>
+                            <div class="form-group full-width"><label for="ca-fam-domicilio">Domicilio</label><input type="text" id="ca-fam-domicilio" name="Familiar Domicilio" required></div>
+                            <div class="form-group"><label for="ca-fam-tel">Tel.</label><input type="tel" id="ca-fam-tel" name="Familiar Teléfono" required></div>
+                            <div class="form-group"><label for="ca-fam-dni">DNI</label><input type="text" id="ca-fam-dni" name="Familiar DNI" required></div>
+                        </div>
+                        <h3>Fechas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-fecha-ingreso">Fecha de Ingreso</label><input type="date" id="ca-fecha-ingreso" name="Fecha Ingreso" required></div>
+                            <div class="form-group"><label for="ca-hora-ingreso">Hora</label><input type="time" id="ca-hora-ingreso" name="Hora Ingreso" required></div>
+                            <div class="form-group"><label for="ca-fecha-egreso">Fecha de Egreso</label><input type="date" id="ca-fecha-egreso" name="Fecha Egreso" required></div>
+                            <div class="form-group"><label for="ca-hora-egreso">Hora</label><input type="time" id="ca-hora-egreso" name="Hora Egreso" required></div>
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-admin"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-admin">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 2: ADMISSION -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Ingreso</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-paciente-2">Paciente</label><input type="text" id="ca-paciente-2" name="Paciente (Ingreso)" required></div>
+                            <div class="form-group"><label for="ca-hc-2">HC</label><input type="text" id="ca-hc-2" name="HC (Ingreso)" required></div>
+                            <div class="form-group"><label for="ca-servicio">Servicio</label><input type="text" id="ca-servicio" name="Servicio" required></div>
+                            <div class="form-group"><label for="ca-habitacion">Habitación</label><input type="text" id="ca-habitacion" name="Habitación" required></div>
+                            <div class="form-group"><label for="ca-cama">Cama</label><input type="text" id="ca-cama" name="Cama" required></div>
+                            <div class="form-group"><label for="ca-fecha-2">Fecha</label><input type="date" id="ca-fecha-2" name="Fecha (Ingreso)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ca-motivo-internacion">Motivo de Internación</label><textarea id="ca-motivo-internacion" name="Motivo de Internación" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-diagnostico-presuntivo">Diagnóstico Presuntivo</label><textarea id="ca-diagnostico-presuntivo" name="Diagnóstico Presuntivo" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-estado-actual">Estado Actual</label><textarea id="ca-estado-actual" name="Estado Actual" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-antecedentes">Antecedentes</label><textarea id="ca-antecedentes" name="Antecedentes" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-1"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-1">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 3: PHYSICAL EXAM -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Examen Físico (Continuación)</h3>
+                        <div class="form-group full-width"><label for="ca-cabeza-cuello">Cabeza y Cuello</label><textarea id="ca-cabeza-cuello" name="Examen Cabeza y Cuello" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-respiratorio">Aparato Respiratorio</label><textarea id="ca-aparato-respiratorio" name="Examen Aparato Respiratorio" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-cardiovascular">Aparato Cardiovascular</label><textarea id="ca-aparato-cardiovascular" name="Examen Aparato Cardiovascular" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-digestivo">Aparato Digestivo</label><textarea id="ca-aparato-digestivo" name="Examen Aparato Digestivo" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-locomotor">Aparato Locomotor</label><textarea id="ca-aparato-locomotor" name="Examen Aparato Locomotor" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-aparato-genitourinario">Aparato Genitourinario</label><textarea id="ca-aparato-genitourinario" name="Examen Aparato Genitourinario" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-sistema-nervioso">Sistema Nervioso</label><textarea id="ca-sistema-nervioso" name="Examen Sistema Nervioso" rows="3" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-observaciones">Observaciones</label><textarea id="ca-observaciones" name="Observaciones" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-estudios-complementarios">Estudios Complementarios</label><textarea id="ca-estudios-complementarios" name="Estudios Complementarios" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-tratamiento">Tratamiento</label><textarea id="ca-tratamiento" name="Tratamiento" rows="4" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-2">Firmar Sección</button>
+                        </div>
+                    </section>
+
+                    <!-- PAGE 4: SURGICAL REPORT 1 -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico</h3>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                            <div class="form-group"><label for="ca-paciente-4">Paciente</label><input type="text" id="ca-paciente-4" name="Paciente (PQ)" required></div>
+                            <div class="form-group"><label for="ca-grupo">Grupo</label><input type="text" id="ca-grupo" name="Grupo Sanguíneo" required></div>
+                            <div class="form-group"><label for="ca-rh">RH</label><input type="text" id="ca-rh" name="Factor RH" required></div>
+                        </div>
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+                             <div class="form-group"><label for="ca-servicio-4">Servicio</label><input type="text" id="ca-servicio-4" name="Servicio (PQ)" required></div>
+                            <div class="form-group"><label for="ca-hab-4">Hab.</label><input type="text" id="ca-hab-4" name="Habitación (PQ)" required></div>
+                            <div class="form-group"><label for="ca-cama-4">Cama</label><input type="text" id="ca-cama-4" name="Cama (PQ)" required></div>
+                        </div>
+                         <div class="form-grid">
+                            <div class="form-group"><label for="ca-fecha-cirugia">Fecha de Cirugía</label><input type="date" id="ca-fecha-cirugia" name="Fecha de Cirugía" required></div>
+                            <div class="form-group"><label for="ca-hora-cirugia">Hora</label><input type="time" id="ca-hora-cirugia" name="Hora de Cirugía" required></div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-cirujano">Cirujano</label><input type="text" id="ca-cirujano" name="Cirujano" required></div>
+                            <div class="form-group"><label for="ca-ayudante1">Ayudante 1</label><input type="text" id="ca-ayudante1" name="Ayudante 1" required></div>
+                            <div class="form-group"><label for="ca-ayudante2">Ayudante 2</label><input type="text" id="ca-ayudante2" name="Ayudante 2" required></div>
+                             <div class="form-group"><label for="ca-pediatra">Pediatra</label><input type="text" id="ca-pediatra" name="Pediatra" required></div>
+                            <div class="form-group"><label for="ca-anestesista">Anestesista</label><input type="text" id="ca-anestesista" name="Anestesista" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ca-diagnostico-preop">Diagnóstico Preoperatorio</label><textarea id="ca-diagnostico-preop" name="Diagnóstico Preoperatorio" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-operacion-practicada">Operación Practicada</label><textarea id="ca-operacion-practicada" name="Operación Practicada" rows="4" required></textarea></div>
+                        <div class="form-group full-width"><label for="ca-detalles-tecnica">Detalles de la Técnica</label><textarea id="ca-detalles-tecnica" name="Detalles de la Técnica" rows="6" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-3"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-3">Firmar Sección</button>
+                        </div>
+                    </section>
                     
-                    pdf.setFontSize(10).setTextColor(0,0,0);
-                    pdf.setDrawColor(0);
-                }
-            };
-            const drawMedicalDischargePage = (patientName: string, patientDNI: string) => {
-                pdf.addPage();
-                drawHeader();
-                let y = 45;
+                    <!-- PAGE 5: SURGICAL REPORT 2 -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Parte Quirúrgico Hoja 2</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-5">Paciente</label><input type="text" id="ca-paciente-5" name="Paciente (PQ2)" required></div>
+                        <div class="form-group full-width"><label for="ca-detalles-quirurgico-2">Detalles Quirúrgicos (Continuación)</label><textarea id="ca-detalles-quirurgico-2" name="Detalles Quirúrgicos Hoja 2" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-4"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-4">Firmar Sección</button>
+                        </div>
+                    </section>
 
-                pdf.setFontSize(14).text('ALTA MEDICA', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
+                    <!-- Anestesia Protocol -->
+                    <section class="form-section" data-role="anestesista">
+                        <h3>Protocolo Anestésico</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-anest">Paciente</label><input type="text" id="ca-paciente-anest" name="Paciente (Anestesia)" required></div>
+                        <div class="form-group">
+                            <label for="ca-protocolo-escaneado">Adjuntar Protocolo Escaneado (PDF)</label>
+                            <input type="file" id="ca-protocolo-escaneado" name="protocolo-escaneado" accept="application/pdf">
+                        </div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-anestesista"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-anestesista">Firmar Sección</button>
+                        </div>
+                    </section>
 
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                drawField('PACIENTE:', patientName, y);
-                drawField('DNI:', patientDNI, y, 115, 140);
-                y += lineSpacing;
-                drawField('FECHA DE ALTA:', new Date().toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' }), y);
-                y += lineSpacing * 2;
+                     <!-- PAGE 6: EVOLUCION -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Evolución</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-evolucion">Paciente</label><input type="text" id="ca-paciente-evolucion" name="Paciente (Evolución)" required></div>
+                        <div class="form-group full-width"><label for="ca-evolucion-notas">Notas de Evolución</label><textarea id="ca-evolucion-notas" name="Evolución Notas" rows="20" required></textarea></div>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-5"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-5">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 7: PRESCRIPCIONES -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Prescripciones Médicas</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-presc">Paciente</label><input type="text" id="ca-paciente-presc" name="Paciente (Prescripciones)" required></div>
+                        <div class="table-container">
+                             <table class="prescripciones-table" data-table-name="prescripciones">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Indicaciones</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-prescripcion-row">Agregar Fila</button>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-6"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-6">Firmar Sección</button>
+                        </div>
+                    </section>
 
-                const dischargeText = "Se otorga el alta médica al paciente, con indicación de continuar tratamiento y seguimiento de forma ambulatoria según las siguientes indicaciones:";
-                const splitText = pdf.splitTextToSize(dischargeText, pageWidth - margin * 2);
-                pdf.text(splitText, margin, y);
-                y += splitText.length * 4 + lineSpacing;
-                
-                y = drawTextArea('INDICACIONES:', [], y, 15);
-                
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
-                    drawUserSignature();
-                } else {
-                    const signatureY = pageHeight - 40;
-                    const signatureXStart = pageWidth - margin - 80;
-                    pdf.setDrawColor(0);
-                    pdf.line(signatureXStart, signatureY, pageWidth - margin, signatureY);
-                    pdf.setFontSize(8).setTextColor(100);
-                    pdf.text("Firma y Sello del Médico Responsable", signatureXStart, signatureY + 4);
-                }
-            };
+                     <!-- PAGE 8: MEDICAL PRACTICES -->
+                    <section class="form-section" data-role="medico">
+                        <h3>Prácticas Médicas</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-paciente-practicas">Paciente</label><input type="text" id="ca-paciente-practicas" name="Paciente (Prácticas)" required></div>
+                            <div class="form-group"><label for="ca-medico-cabecera">Médico de Cabecera</label><input type="text" id="ca-medico-cabecera" name="Médico de Cabecera" required></div>
+                        </div>
+                        <div class="table-container">
+                            <table class="practicas-medicas-table" data-table-name="practicasMedicas">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Código</th>
+                                        <th>Descripción</th>
+                                        <th>Cant.</th>
+                                        <th>Observación</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-practica-row">Agregar Fila</button>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-medico-7"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-medico-7">Firmar Sección</button>
+                        </div>
+                    </section>
+                    
+                    <!-- PAGE 9: NURSING CONTROL -->
+                    <section class="form-section" data-role="enfermero">
+                        <h3>Control de Enfermería</h3>
+                        <div class="form-group full-width"><label for="ca-paciente-enfermeria">Paciente</label><input type="text" id="ca-paciente-enfermeria" name="Paciente (Enfermería)" required></div>
+                        <div class="table-container">
+                            <table class="enfermeria-table" data-table-name="enfermeria">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Hora</th>
+                                        <th>T.A.</th>
+                                        <th>F.C.</th>
+                                        <th>F.R.</th>
+                                        <th>Temp.</th>
+                                        <th>Observaciones</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows will be added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="button" class="btn-secondary add-enfermeria-row">Agregar Fila</button>
+                         <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-enfermero"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-enfermero">Firmar Sección</button>
+                        </div>
+                    </section>
 
-            // --- Conditional PDF Generation ---
-            if (activeContent.id === 'hemodinamia') {
-                const prefix = 'hd-';
-                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
-                const getTextAreaValue = (id: string) => {
-                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
-                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
-                };
-                
-                // --- PAGE 1 ---
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                drawField('MEDICO:', getValue('medico'), y);
-                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
-                y += lineSpacing;
-                drawField('APELLIDO:', getValue('apellido'), y);
-                drawField('EDAD:', getValue('edad'), y, 115, 140);
-                y += lineSpacing;
-                drawField('NOMBRES:', getValue('nombres'), y);
-                drawField('DNI:', getValue('dni'), y, 115, 140);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('domicilio'), y);
-                y += lineSpacing;
-                drawField('TELEFONO:', getValue('telefono'), y);
-                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
-                y += lineSpacing;
-                drawField('COB SOCIAL:', getValue('cob-social'), y);
-                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
-                y += lineSpacing;
-                drawField('CONDICION AL IVA:', getValue('iva'), y);
-                y = 135;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                pdf.setFontSize(10);
-                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
-                y += lineSpacing;
-                drawField('TEL:', getValue('fam-tel'), y);
-                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
-                y = 220;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 2;
-                pdf.setFontSize(10);
-                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
-                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
-                y += lineSpacing;
-                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
-                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+                    <!-- PAGE 10: REPORT -->
+                    <section class="form-section" data-role="enfermero">
+                        <h3>Report</h3>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="ca-paciente-report">Paciente</label><input type="text" id="ca-paciente-report" name="Paciente (Report)" required></div>
+                            <div class="form-group"><label for="ca-fecha-report">Fecha</label><input type="date" id="ca-fecha-report" name="Fecha (Report)" required></div>
+                            <div class="form-group"><label for="ca-sala-report">Sala</label><input type="text" id="ca-sala-report" name="Sala (Report)" required></div>
+                            <div class="form-group"><label for="ca-cama-report">Cama</label><input type="text" id="ca-cama-report" name="Cama (Report)" required></div>
+                        </div>
+                        <div class="form-group full-width"><label for="ca-report-contenido">Contenido del Reporte</label><textarea id="ca-report-contenido" name="Report Contenido" rows="20" required></textarea></div>
+                        <div class="signature-area">
+                            <div class="signature-display" id="ca-sig-enfermero-2"></div>
+                            <button type="button" class="btn-secondary sign-section-btn" data-target-id="ca-sig-enfermero-2">Firmar Sección</button>
+                        </div>
+                    </section>
+                </form>
+            </div>
+            
+            <!-- Admin User Management -->
+            <div id="admin-usuarios" class="tab-content">
+                <section class="form-section">
+                    <h3>Crear Nuevo Usuario</h3>
+                    <form id="create-user-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="create-nombre">Nombre</label>
+                                <input type="text" id="create-nombre" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="create-apellido">Apellido</label>
+                                <input type="text" id="create-apellido" required>
+                            </div>
+                        </div>
+                         <div class="form-group">
+                            <label for="create-especialidad">Especialidad / Puesto</label>
+                            <select id="create-especialidad" required>
+                                <option value="">Seleccione una opción...</option>
+                                <option value="Médico">Médico</option>
+                                <option value="Enfermero">Enfermero</option>
+                                <option value="Anestesista">Anestesista</option>
+                                <option value="Administrativo">Administrativo</option>
+                                <option value="Administrador">Administrador</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="create-matricula-group" style="display: none;">
+                            <label for="create-matricula">Matrícula</label>
+                            <input type="text" id="create-matricula">
+                        </div>
+                         <div class="form-group">
+                            <label for="create-firma">Firma (archivo de imagen)</label>
+                            <input type="file" id="create-firma" accept="image/png, image/jpeg">
+                        </div>
+                        <hr/>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="create-username">Usuario</label>
+                                <input type="text" id="create-username" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="create-password">Contraseña</label>
+                                <input type="password" id="create-password" required>
+                            </div>
+                        </div>
+                        <p id="create-user-error" class="error-message" style="display: none;"></p>
+                        <p id="create-user-success" class="success-message" style="display: none;"></p>
+                        <button type="submit" class="btn-primary">Crear Usuario</button>
+                    </form>
+                </section>
+                <section class="form-section">
+                    <h3>Usuarios Existentes</h3>
+                    <div class="table-container">
+                        <table id="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre Completo</th>
+                                    <th>Usuario</th>
+                                    <th>Especialidad</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <!-- User rows will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
 
-                // --- PAGE 2 ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                drawField('PACIENTE:', getValue('paciente-2'), y);
-                drawField('HC:', getValue('hc-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('SERVICIO:', getValue('servicio'), y);
-                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('HABITACION:', getValue('habitacion'), y);
-                drawField('CAMA:', getValue('cama'), y, 115, 140);
-                y += lineSpacing * 2;
-                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
-                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
-                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
-                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
-                y += lineSpacing;
-                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing;
-                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
-                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+        </main>
 
-                // --- PAGE 3 ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
-                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
-                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
-                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
-                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
-                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
-                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
-                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 4 ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                pdf.setFontSize(14).text('PARTE QUIRURGICO HOJA 2', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawCenteredField('PACIENTE:', getValue('paciente-4'), y);
-                y += lineSpacing;
-                drawTextArea('', getTextAreaValue('reporte-quirurgico'), y, 25);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 5 ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                pdf.setFontSize(12).text('PRACTICAS MEDICAS', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawCenteredField('PACIENTE:', getValue('paciente-5'), y);
-                y += lineSpacing;
-                drawCenteredField('MEDICO DE CABECERA:', getValue('medico-cabecera'), y);
-                y += lineSpacing;
-                const practicasHeaders = ["Fecha", "Código", "Descripción", "Cant.", "Observación"];
-                const practicasColWidths = [30, 20, 50, 15, 70];
-                const practicasTableBody = activeContent.querySelector('.practicas-medicas-table tbody');
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                pdf.rect(margin, y, pageWidth - margin * 2, 8);
-                let currentX = margin;
-                for(let i = 0; i < practicasHeaders.length; i++) {
-                    pdf.text(practicasHeaders[i], currentX + 2, y + 4, { baseline: 'middle' });
-                    currentX += practicasColWidths[i];
-                    if (i < practicasHeaders.length - 1) pdf.line(currentX, y, currentX, y + 23 * 8);
-                }
-                y += 8;
-                const practicasRows = practicasTableBody?.querySelectorAll('tr');
-                for(let i = 0; i < 22; i++) {
-                    pdf.rect(margin, y, pageWidth - margin * 2, 8);
-                    if (practicasRows && i < practicasRows.length) {
-                        const cells = practicasRows[i].querySelectorAll('input');
-                        currentX = margin;
-                        for(let j = 0; j < cells.length; j++) {
-                            pdf.text(cells[j].value, currentX + 2, y + 4, { baseline: 'middle', maxWidth: practicasColWidths[j] - 4 });
-                            currentX += practicasColWidths[j];
-                        }
-                    }
-                    y += 8;
-                }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 6 ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                pdf.setFontSize(12).text('CONTROL DE ENFERMERIA', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawCenteredField('PACIENTE:', getValue('paciente-6'), y);
-                y += lineSpacing;
-                const enfermeriaHeaders = ["Fecha", "Hora", "T.A.", "F.C.", "F.R.", "Temp.", "Observaciones"];
-                const enfermeriaColWidths = [30, 15, 15, 15, 15, 15, 75];
-                const enfermeriaTableBody = activeContent.querySelector('.enfermeria-table tbody');
-                pdf.rect(margin, y, pageWidth - margin * 2, 8);
-                currentX = margin;
-                for(let i = 0; i < enfermeriaHeaders.length; i++) {
-                    pdf.text(enfermeriaHeaders[i], currentX + 2, y + 4, { baseline: 'middle' });
-                    currentX += enfermeriaColWidths[i];
-                     if (i < enfermeriaHeaders.length - 1) pdf.line(currentX, y, currentX, y + 17 * 12);
-                }
-                y += 8;
-                const enfermeriaRows = enfermeriaTableBody?.querySelectorAll('tr');
-                for(let i = 0; i < 16; i++) {
-                     pdf.rect(margin, y, pageWidth - margin * 2, 12);
-                     if(enfermeriaRows && i < enfermeriaRows.length) {
-                        const cells = enfermeriaRows[i].querySelectorAll('input');
-                        currentX = margin;
-                        for(let j = 0; j < cells.length; j++) {
-                            pdf.text(cells[j].value, currentX + 2, y + 6, { baseline: 'middle', maxWidth: enfermeriaColWidths[j] - 4 });
-                            currentX += enfermeriaColWidths[j];
-                        }
-                     }
-                     y += 12;
-                }
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
-                const patientDNI = getValue('dni');
-                drawMedicalDischargePage(patientName, patientDNI);
-                
-                pdf.save(`hemodinamia-${getValue('apellido')}-${getValue('dni')}.pdf`);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
-                    await setDischargeTimestamp();
-                }
-
-            } else if (activeContent.id === 'grupo-endoscopico') {
-                const prefix = 'ge-';
-                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
-                const getTextAreaValue = (id: string) => {
-                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
-                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
-                };
-
-                // --- PAGE 1 (Same as Hemodinamia) ---
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                drawField('MEDICO:', getValue('medico'), y);
-                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
-                y += lineSpacing;
-                drawField('APELLIDO:', getValue('apellido'), y);
-                drawField('EDAD:', getValue('edad'), y, 115, 140);
-                y += lineSpacing;
-                drawField('NOMBRES:', getValue('nombres'), y);
-                drawField('DNI:', getValue('dni'), y, 115, 140);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('domicilio'), y);
-                y += lineSpacing;
-                drawField('TELEFONO:', getValue('telefono'), y);
-                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
-                y += lineSpacing;
-                drawField('COB SOCIAL:', getValue('cob-social'), y);
-                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
-                y += lineSpacing;
-                drawField('CONDICION AL IVA:', getValue('iva'), y);
-                y = 135;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                pdf.setFontSize(10);
-                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
-                y += lineSpacing;
-                drawField('TEL:', getValue('fam-tel'), y);
-                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
-                y = 220;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 2;
-                pdf.setFontSize(10);
-                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
-                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
-                y += lineSpacing;
-                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
-                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 2 (Same as Hemodinamia) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                drawField('PACIENTE:', getValue('paciente-2'), y);
-                drawField('HC:', getValue('hc-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('SERVICIO:', getValue('servicio'), y);
-                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('HABITACION:', getValue('habitacion'), y);
-                drawField('CAMA:', getValue('cama'), y, 115, 140);
-                y += lineSpacing * 2;
-                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
-                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
-                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
-                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
-                y += lineSpacing;
-                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing;
-                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
-                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 3 (Same as Hemodinamia) ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
-                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
-                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
-                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
-                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
-                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
-                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
-                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 4 (Evolucion) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('EVOLUCION', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                pdf.rect(margin, y, pageWidth - margin * 2, 10);
-                drawField('PACIENTE:', getValue('paciente-evolucion'), y + 6, margin + 2, margin + 22);
-                y += 10;
-                const evolucionText = getTextAreaValue('evolucion-notas');
-                const lineHeight = 10;
-                const numLines = 22;
-                for (let i = 0; i < numLines; i++) {
-                    pdf.rect(margin, y, pageWidth - margin * 2, lineHeight);
-                    if (i < evolucionText.length) {
-                        pdf.text(evolucionText[i], margin + 2, y + lineHeight / 2 + 1, { baseline: 'middle', maxWidth: pageWidth - (margin * 2) - 4 });
-                    }
-                    y += lineHeight;
-                }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 5 (Report) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('REPORT', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for patient
-                drawField('PACIENTE:', getValue('paciente-report'), y + 6, margin + 2, margin + 22);
-                y += 10;
-                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for date, sala, cama
-                drawField('FECHA:', getValue('fecha-report'), y + 6, margin + 2, margin + 18);
-                drawField('SALA:', getValue('sala-report'), y + 6, pageWidth / 2 - 20, pageWidth / 2 - 8);
-                drawField('CAMA:', getValue('cama-report'), y + 6, pageWidth / 2 + 50, pageWidth / 2 + 65);
-                y += 15;
-                const reportContent = getTextAreaValue('report-contenido');
-                pdf.setLineDashPattern([1, 1], 0);
-                let lineY = y;
-                const reportLineHeight = 8;
-                const reportNumLines = 25;
-                for(let i = 0; i < reportNumLines; i++) {
-                    if (i < reportContent.length) {
-                        pdf.text(reportContent[i], margin, lineY, { baseline: 'middle', maxWidth: pageWidth - margin * 2 });
-                    }
-                    pdf.line(margin, lineY, pageWidth - margin, lineY);
-                    lineY += reportLineHeight;
-                }
-                pdf.setLineDashPattern([], 0);
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
-                const patientDNI = getValue('dni');
-                drawMedicalDischargePage(patientName, patientDNI);
-
-                pdf.save(`grupo-endoscopico-${getValue('apellido')}-${getValue('dni')}.pdf`);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
-                    await setDischargeTimestamp();
-                }
-
-            } else if (activeContent.id === 'cirugias') {
-                const prefix = 'cg-';
-                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
-                const getTextAreaValue = (id: string) => {
-                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
-                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
-                };
-
-                // --- PAGE 1 (Standard) ---
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                drawField('MEDICO:', getValue('medico'), y);
-                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
-                y += lineSpacing;
-                drawField('APELLIDO:', getValue('apellido'), y);
-                drawField('EDAD:', getValue('edad'), y, 115, 140);
-                y += lineSpacing;
-                drawField('NOMBRES:', getValue('nombres'), y);
-                drawField('DNI:', getValue('dni'), y, 115, 140);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('domicilio'), y);
-                y += lineSpacing;
-                drawField('TELEFONO:', getValue('telefono'), y);
-                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
-                y += lineSpacing;
-                drawField('COB SOCIAL:', getValue('cob-social'), y);
-                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
-                y += lineSpacing;
-                drawField('CONDICION AL IVA:', getValue('iva'), y);
-                y = 135;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                pdf.setFontSize(10);
-                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
-                y += lineSpacing;
-                drawField('TEL:', getValue('fam-tel'), y);
-                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
-                y = 220;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 2;
-                pdf.setFontSize(10);
-                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
-                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
-                y += lineSpacing;
-                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
-                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 2 (Standard) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                drawField('PACIENTE:', getValue('paciente-2'), y);
-                drawField('HC:', getValue('hc-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('SERVICIO:', getValue('servicio'), y);
-                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('HABITACION:', getValue('habitacion'), y);
-                drawField('CAMA:', getValue('cama'), y, 115, 140);
-                y += lineSpacing * 2;
-                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
-                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
-                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
-                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
-                y += lineSpacing;
-                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing;
-                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
-                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 3 (Standard) ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
-                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
-                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
-                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
-                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
-                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
-                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
-                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 4 (Parte Quirurgico) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('PARTE QUIRURGICO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 1;
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                
-                // Top Box
-                pdf.rect(margin, y, pageWidth - margin * 2, 20);
-                const contentWidth = pageWidth - margin * 2;
-                const firstDividerX = margin + contentWidth *1.5 / 3;
-                const secondDividerX = firstDividerX + (contentWidth / 1.7) / 2;
-
-                // Vertical dividers
-                pdf.line(firstDividerX, y, firstDividerX, y + 20);
-                pdf.line(secondDividerX, y, secondDividerX, y + 20);
-                // Horizontal divider
-                pdf.line(margin, y + 10, pageWidth - margin, y + 10);
-                
-                // Fields in the box - Corrected Alignment
-                drawField('PACIENTE:', getValue('paciente-4'), y + 6, margin + 2, margin + 30);
-                drawField('GRUPO:', getValue('grupo'), y + 6, firstDividerX + 2, firstDividerX + 23);
-                drawField('RH:', getValue('rh'), y + 6, secondDividerX + 2, secondDividerX + 17);
-                
-                drawField('SERVICIO:', getValue('servicio-4'), y + 16, margin + 2, margin + 30);
-                drawField('HAB:', getValue('hab-4'), y + 16, firstDividerX + 2, firstDividerX + 18);
-                drawField('CAMA:', getValue('cama-4'), y + 16, secondDividerX + 2, secondDividerX + 20);
-
-                y += lineSpacing * 1;
-                y += 25;
-                drawField('FECHA CIRUGIA:', getValue('fecha-cirugia'), y);
-                drawField('HORA:', getValue('hora-cirugia'), y, 115, 140);
-                y += lineSpacing;
-                drawField('CIRUJANO:', getValue('cirujano'), y);
-                y += lineSpacing;
-                drawField('AYUDANTE 1:', getValue('ayudante1'), y);
-                drawField('AYUDANTE 2:', getValue('ayudante2'), y, 115, 150);
-                y += lineSpacing;
-                drawField('PEDIATRA:', getValue('pediatra'), y);
-                drawField('ANESTESISTA:', getValue('anestesista'), y, 115, 155);
-                y += lineSpacing * 1.5;
-
-                y = drawTextArea('DIAGNOSTICO PREOPERATORIO:', getTextAreaValue('diagnostico-preop'), y, 4);
-                y = drawTextArea('OPERACIÓN PRACTICADA:', getTextAreaValue('operacion-practicada'), y, 4);
-                drawTextArea('DETALLES DE LA TECNICA:', getTextAreaValue('detalles-tecnica'), y, 8);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 5 (Parte Quirurgico Hoja 2) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('PARTE QUIRURGICO HOJA 2', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawField('PACIENTE:', getValue('paciente-5'), y);
-                y += lineSpacing * 1.5;
-                drawTextArea('', getTextAreaValue('detalles-quirurgico-2'), y, 38);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 6 (Evolucion) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('EVOLUCION', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                pdf.rect(margin, y, pageWidth - margin * 2, 10);
-                drawField('PACIENTE:', getValue('paciente-evolucion'), y + 6, margin + 2, margin +29);
-                y += 10;
-                const evolucionTextCG = getTextAreaValue('evolucion-notas');
-                const lineHeightCG = 10;
-                const numLinesCG = 22;
-                for (let i = 0; i < numLinesCG; i++) {
-                    pdf.rect(margin, y, pageWidth - margin * 2, lineHeightCG);
-                    if (i < evolucionTextCG.length) {
-                        pdf.text(evolucionTextCG[i], margin + 2, y + lineHeightCG / 2 + 1, { baseline: 'middle', maxWidth: pageWidth - (margin * 2) - 4 });
-                    }
-                    y += lineHeightCG;
-                }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
-                const patientDNI = getValue('dni');
-                drawMedicalDischargePage(patientName, patientDNI);
-
-                pdf.save(`cirugias-${getValue('apellido')}-${getValue('dni')}.pdf`);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
-                    await setDischargeTimestamp();
-                }
-
-            } else if (activeContent.id === 'cirugia-anestesia') {
-                const prefix = 'ca-';
-                const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '';
-                const getTextAreaValue = (id: string) => {
-                    const value = (document.getElementById(prefix + id) as HTMLTextAreaElement)?.value || '';
-                    return pdf.splitTextToSize(value, pageWidth - margin * 2);
-                };
-                
-                const scannedProtocolInput = document.getElementById('ca-protocolo-escaneado') as HTMLInputElement;
-                const scannedFile = scannedProtocolInput.files ? scannedProtocolInput.files[0] : null;
-
-                // --- PAGE 1 (Standard) ---
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                pdf.setFontSize(12).text('DATOS DEL PACIENTE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                drawField('MEDICO:', getValue('medico'), y);
-                drawField('HC N°:', getValue('hc-n'), y, 115, 140);
-                y += lineSpacing;
-                drawField('APELLIDO:', getValue('apellido'), y);
-                drawField('EDAD:', getValue('edad'), y, 115, 140);
-                y += lineSpacing;
-                drawField('NOMBRES:', getValue('nombres'), y);
-                drawField('DNI:', getValue('dni'), y, 115, 140);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('domicilio'), y);
-                y += lineSpacing;
-                drawField('TELEFONO:', getValue('telefono'), y);
-                drawField('EST. CIVIL:', getValue('estado-civil'), y, 115, 140);
-                y += lineSpacing;
-                drawField('COB SOCIAL:', getValue('cob-social'), y);
-                drawField('N° AF:', getValue('n-afiliado'), y, 115, 140);
-                y += lineSpacing;
-                drawField('CONDICION AL IVA:', getValue('iva'), y);
-                y = 135;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FAMILIAR RESPONSABLE', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 3;
-                pdf.setFontSize(10);
-                drawField('APELLIDO Y NOMBRE:', getValue('fam-nombre'), y);
-                y += lineSpacing;
-                drawField('DOMICILIO:', getValue('fam-domicilio'), y);
-                y += lineSpacing;
-                drawField('TEL:', getValue('fam-tel'), y);
-                drawField('DNI:', getValue('fam-dni'), y, 115, 140);
-                y = 220;
-                pdf.line(margin, y, pageWidth - margin, y);
-                y += lineSpacing * 2;
-                pdf.setFontSize(12).text('FECHAS', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 2;
-                pdf.setFontSize(10);
-                drawField('FECHA DE INGRESO:', getValue('fecha-ingreso'), y);
-                drawField('HORA:', getValue('hora-ingreso'), y, 115, 140);
-                y += lineSpacing;
-                drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
-                drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 2 (Standard) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('INGRESO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                drawField('PACIENTE:', getValue('paciente-2'), y);
-                drawField('HC:', getValue('hc-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('SERVICIO:', getValue('servicio'), y);
-                drawField('FECHA:', getValue('fecha-2'), y, 115, 140);
-                y += lineSpacing;
-                drawField('HABITACION:', getValue('habitacion'), y);
-                drawField('CAMA:', getValue('cama'), y, 115, 140);
-                y += lineSpacing * 2;
-                y = drawTextArea('MOTIVO DE INTERNACION:', getTextAreaValue('motivo-internacion'), y, 3);
-                y = drawTextArea('DIAGNOSTICO PRESUNTIVO:', getTextAreaValue('diagnostico-presuntivo'), y, 4);
-                y = drawTextArea('ESTADO ACTUAL:', getTextAreaValue('estado-actual'), y, 4);
-                y = drawTextArea('ANTECEDENTES:', getTextAreaValue('antecedentes'), y, 4);
-                y += lineSpacing;
-                pdf.setFontSize(14).text('EXAMEN FISICO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing;
-                y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
-                drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 3 (Standard) ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                y = drawTextArea('APARATO CARDIOVASCULAR:', getTextAreaValue('aparato-cardiovascular'), y, 4);
-                y = drawTextArea('APARATO DIGESTIVO:', getTextAreaValue('aparato-digestivo'), y, 4);
-                y = drawTextArea('APARATO LOCOMOTOR:', getTextAreaValue('aparato-locomotor'), y, 4);
-                y = drawTextArea('APARATO GENITOUTERINO:', getTextAreaValue('aparato-genitourinario'), y, 4);
-                y = drawTextArea('SISTEMA NERVIOSO:', getTextAreaValue('sistema-nervioso'), y, 4);
-                y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
-                y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
-                drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 4 (Parte Quirurgico) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('PARTE QUIRURGICO', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 1;
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                
-                pdf.rect(margin, y, pageWidth - margin * 2, 20);
-                const contentWidthCA = pageWidth - margin * 2;
-                const firstDividerXCA = margin + contentWidthCA *1.5 / 3;
-                const secondDividerXCA = firstDividerXCA + (contentWidthCA / 1.7) / 2;
-                pdf.line(firstDividerXCA, y, firstDividerXCA, y + 20);
-                pdf.line(secondDividerXCA, y, secondDividerXCA, y + 20);
-                pdf.line(margin, y + 10, pageWidth - margin, y + 10);
-                drawField('PACIENTE:', getValue('paciente-4'), y + 6, margin + 2, margin + 30);
-                drawField('GRUPO:', getValue('grupo'), y + 6, firstDividerXCA + 2, firstDividerXCA + 23);
-                drawField('RH:', getValue('rh'), y + 6, secondDividerXCA + 2, secondDividerXCA + 17);
-                drawField('SERVICIO:', getValue('servicio-4'), y + 16, margin + 2, margin + 30);
-                drawField('HAB:', getValue('hab-4'), y + 16, firstDividerXCA + 2, firstDividerXCA + 18);
-                drawField('CAMA:', getValue('cama-4'), y + 16, secondDividerXCA + 2, secondDividerXCA + 20);
-                y += lineSpacing * 1;
-                y += 25;
-                drawField('FECHA CIRUGIA:', getValue('fecha-cirugia'), y);
-                drawField('HORA:', getValue('hora-cirugia'), y, 115, 140);
-                y += lineSpacing;
-                drawField('CIRUJANO:', getValue('cirujano'), y);
-                y += lineSpacing;
-                drawField('AYUDANTE 1:', getValue('ayudante1'), y);
-                drawField('AYUDANTE 2:', getValue('ayudante2'), y, 115, 150);
-                y += lineSpacing;
-                drawField('PEDIATRA:', getValue('pediatra'), y);
-                drawField('ANESTESISTA:', getValue('anestesista'), y, 115, 155);
-                y += lineSpacing * 1.5;
-
-                y = drawTextArea('DIAGNOSTICO PREOPERATORIO:', getTextAreaValue('diagnostico-preop'), y, 4);
-                y = drawTextArea('OPERACIÓN PRACTICADA:', getTextAreaValue('operacion-practicada'), y, 4);
-                drawTextArea('DETALLES DE LA TECNICA:', getTextAreaValue('detalles-tecnica'), y, 8);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 5 (Parte Quirurgico Hoja 2) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('PARTE QUIRURGICO HOJA 2', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawField('PACIENTE:', getValue('paciente-5'), y);
-                y += lineSpacing * 1.5;
-                drawTextArea('', getTextAreaValue('detalles-quirurgico-2'), y, 38);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 6 (Anesthesia Protocol Cover) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('PROTOCOLO ANESTÉSICO', pageWidth / 2, y, { align: 'center' });
-                y += lineSpacing * 4;
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                const noteText = "El protocolo anestésico completo, firmado por el especialista, se adjunta en las páginas siguientes.";
-                const splitNote = pdf.splitTextToSize(noteText, pageWidth - margin * 2);
-                pdf.text(splitNote, margin, y);
-                if (user?.especialidad === 'Anestesista' || user?.especialidad === 'Administrador') {
-                    drawUserSignature();
-                }
-
-                // --- PAGE 7 (Evolucion) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('EVOLUCION', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                pdf.rect(margin, y, pageWidth - margin * 2, 10);
-                drawField('PACIENTE:', getValue('paciente-evolucion'), y + 6, margin + 2, margin +29);
-                y += 10;
-                const evolucionTextCA = getTextAreaValue('evolucion-notas');
-                const lineHeightCA = 10;
-                const numLinesCA = 22;
-                for (let i = 0; i < numLinesCA; i++) {
-                    pdf.rect(margin, y, pageWidth - margin * 2, lineHeightCA);
-                    if (i < evolucionTextCA.length) {
-                        pdf.text(evolucionTextCA[i], margin + 2, y + lineHeightCA / 2 + 1, { baseline: 'middle', maxWidth: pageWidth - (margin * 2) - 4 });
-                    }
-                    y += lineHeightCA;
-                }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 8 (Prescripciones) ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                pdf.setFontSize(12).text('PRESCRIPCIONES MEDICAS', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawField('PACIENTE:', getValue('paciente-presc'), y);
-                y += lineSpacing * 1;
-                const prescripcionesTableBody = activeContent.querySelector('.prescripciones-table tbody');
-                const prescripcionesRows = prescripcionesTableBody?.querySelectorAll('tr');
-                const presCellHeight = 10;
-                pdf.rect(margin, y, 30, presCellHeight);
-                pdf.text('FECHA', margin + 2, y + presCellHeight/2 + 2);
-                pdf.rect(margin + 30, y, pageWidth - margin * 2 - 30, presCellHeight);
-                pdf.text('INDICACIONES', margin + 32, y + presCellHeight/2 + 2);
-                y += presCellHeight;
-                 for(let i = 0; i < 22; i++) {
-                    pdf.rect(margin, y, 30, presCellHeight);
-                    pdf.rect(margin + 30, y, pageWidth - margin * 2 - 30, presCellHeight);
-                    if (prescripcionesRows && i < prescripcionesRows.length) {
-                        const cells = prescripcionesRows[i].querySelectorAll('input');
-                        pdf.text(cells[0].value, margin + 2, y + presCellHeight/2 + 2);
-                        pdf.text(cells[1].value, margin + 32, y + presCellHeight/2 + 2, {maxWidth: pageWidth - margin * 2 - 35});
-                    }
-                    y += presCellHeight;
-                }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 9 (Prácticas Médicas) ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                pdf.setFontSize(12).text('PRACTICAS MEDICAS', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawField('PACIENTE:', getValue('paciente-practicas'), y);
-                y += lineSpacing;
-                drawField('MEDICO:', getValue('medico-cabecera'), y);
-                y += lineSpacing;
-                const practicasHeadersCA = ["Fecha", "Código", "Descripción", "Cant.", "Observación"];
-                const practicasColWidthsCA = [30, 20, 50, 15, 70];
-                const practicasTableBodyCA = activeContent.querySelector('.practicas-medicas-table tbody');
-                pdf.setDrawColor(0).setLineWidth(0.2);
-                let currentXCA = margin;
-                pdf.rect(margin, y, pageWidth - margin * 2, 8);
-                for(let i = 0; i < practicasHeadersCA.length; i++) {
-                    pdf.text(practicasHeadersCA[i], currentXCA + 2, y + 4, { baseline: 'middle' });
-                    currentXCA += practicasColWidthsCA[i];
-                    if (i < practicasHeadersCA.length - 1) pdf.line(currentXCA, y, currentXCA, y + 23 * 8);
-                }
-                y += 8;
-                const practicasRowsCA = practicasTableBodyCA?.querySelectorAll('tr');
-                for(let i = 0; i < 22; i++) {
-                    pdf.rect(margin, y, pageWidth - margin * 2, 8);
-                    if (practicasRowsCA && i < practicasRowsCA.length) {
-                        const cells = practicasRowsCA[i].querySelectorAll('input');
-                        currentXCA = margin;
-                        for(let j = 0; j < cells.length; j++) {
-                            pdf.text(cells[j].value, currentXCA + 2, y + 4, { baseline: 'middle', maxWidth: practicasColWidthsCA[j] - 4 });
-                            currentXCA += practicasColWidthsCA[j];
-                        }
-                    }
-                    y += 8;
-                }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                // --- PAGE 10 (Control de Enfermería) ---
-                pdf.addPage();
-                drawHeader();
-                pdf.setFontSize(10).setTextColor(0,0,0);
-                y = 45;
-                pdf.setFontSize(12).text('CONTROL DE ENFERMERIA', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                drawField('PACIENTE:', getValue('paciente-enfermeria'), y);
-                y += lineSpacing;
-                const enfermeriaHeadersCA = ["Fecha", "Hora", "T.A.", "F.C.", "F.R.", "Temp.", "Observaciones"];
-                const enfermeriaColWidthsCA = [30, 15, 15, 15, 15, 15, 75];
-                const enfermeriaTableBodyCA = activeContent.querySelector('.enfermeria-table tbody');
-                currentXCA = margin;
-                pdf.rect(margin, y, pageWidth - margin * 2, 8);
-                for(let i = 0; i < enfermeriaHeadersCA.length; i++) {
-                    pdf.text(enfermeriaHeadersCA[i], currentXCA + 2, y + 4, { baseline: 'middle' });
-                    currentXCA += enfermeriaColWidthsCA[i];
-                     if (i < enfermeriaHeadersCA.length - 1) pdf.line(currentXCA, y, currentXCA, y + 17 * 12);
-                }
-                y += 8;
-                const enfermeriaRowsCA = enfermeriaTableBodyCA?.querySelectorAll('tr');
-                for(let i = 0; i < 16; i++) {
-                     pdf.rect(margin, y, pageWidth - margin * 2, 12);
-                     if(enfermeriaRowsCA && i < enfermeriaRowsCA.length) {
-                        const cells = enfermeriaRowsCA[i].querySelectorAll('input');
-                        currentXCA = margin;
-                        for(let j = 0; j < cells.length; j++) {
-                            pdf.text(cells[j].value, currentXCA + 2, y + 6, { baseline: 'middle', maxWidth: enfermeriaColWidthsCA[j] - 4 });
-                            currentXCA += enfermeriaColWidthsCA[j];
-                        }
-                     }
-                     y += 12;
-                }
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
-                
-                // --- PAGE 11 (Report) ---
-                pdf.addPage();
-                drawHeader();
-                y = 45;
-                pdf.setFontSize(14).text('REPORT', pageWidth/2, y, { align: 'center'});
-                y += lineSpacing * 2;
-                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for patient
-                drawField('PACIENTE:', getValue('paciente-report'), y + 6, margin + 2, margin + 30);
-                y += 10;
-                pdf.rect(margin, y, pageWidth - margin * 2, 10); // Box for date, sala, cama
-                drawField('FECHA:', getValue('fecha-report'), y + 6, margin + 2, margin + 23);
-                drawField('SALA:', getValue('sala-report'), y + 6, pageWidth / 2 - 20, pageWidth / 2 - 4);
-                drawField('CAMA:', getValue('cama-report'), y + 6, pageWidth / 2 + 50, pageWidth / 2 + 69);
-                y += 15;
-                const reportContentCA = getTextAreaValue('report-contenido');
-                pdf.setLineDashPattern([1, 1], 0);
-                let lineY2 = y;
-                const reportLineHeight = 8;
-                const reportNumLines = 25;
-                for(let i = 0; i < reportNumLines; i++) {
-                    if (i < reportContentCA.length) {
-                        pdf.text(reportContentCA[i], margin, lineY2, { baseline: 'middle', maxWidth: pageWidth - margin * 2 });
-                    }
-                    pdf.line(margin, lineY2, pageWidth - margin, lineY2);
-                    lineY2 += reportLineHeight;
-                }
-                pdf.setLineDashPattern([], 0);
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
-
-                const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
-                const patientDNI = getValue('dni');
-                drawMedicalDischargePage(patientName, patientDNI);
-
-                const finalPdfBytes = pdf.output('arraybuffer');
-                const mainPdfDoc = await PDFDocument.load(finalPdfBytes);
-
-                if (scannedFile) {
-                    try {
-                        const uploadedPdfBytes = await scannedFile.arrayBuffer();
-                        const uploadedPdfDoc = await PDFDocument.load(uploadedPdfBytes);
-                        
-                        const uploadedPagesIndices = uploadedPdfDoc.getPageIndices();
-                        const copiedPages = await mainPdfDoc.copyPages(uploadedPdfDoc, uploadedPagesIndices);
-                        
-                        // Insert the scanned pages after the anesthesia protocol cover page (page 6, index 5)
-                        copiedPages.forEach((page, index) => {
-                            mainPdfDoc.insertPage(6 + index, page);
-                        });
-
-                    } catch (mergeError) {
-                        console.error("Error merging PDFs:", mergeError);
-                        alert("Error al combinar el PDF escaneado. Se generará el PDF sin el archivo adjunto.");
-                    }
-                } 
-
-                const finalMergedPdfBytes = await mainPdfDoc.save();
-                const blob = new Blob([finalMergedPdfBytes], { type: 'application/pdf' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                const filename = `cirugia-anestesia-${getValue('apellido')}-${getValue('dni')}.pdf`;
-                link.download = filename;
-                link.click();
-                URL.revokeObjectURL(link.href);
-
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
-                    await setDischargeTimestamp();
-                }
-            }
-
-        } catch (error) {
-            console.error("PDF Generation Error:", error);
-            alert('Ocurrió un error al generar el PDF. Por favor, revise la consola para más detalles.');
-        } finally {
-            btn.textContent = originalButtonText;
-            btn.disabled = false;
-        }
-    });
-
-});
+        <footer>
+            <input type="file" id="import-clinic-input" accept=".clinic" style="display: none;">
+            <div class="form-actions">
+                <button id="import-clinic-btn" class="btn-secondary">Importar .clinic</button>
+                <button id="export-clinic-btn" class="btn-export">Exportar .clinic</button>
+                <button id="generate-alta-btn" class="btn-primary">Generar Alta y PDF</button>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
