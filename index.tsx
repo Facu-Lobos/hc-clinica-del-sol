@@ -165,6 +165,24 @@ const apiUpdateUserProfile = async (userId: string, profileData: Partial<Omit<Us
     return data;
 }
 
+/**
+ * Updates a user's password via a Supabase Edge Function.
+ * NOTE: This requires an Edge Function named 'update-user-password' to be deployed.
+ * @param userId The UUID of the user to update.
+ * @param password The new password.
+ */
+const apiUpdateUserPassword = async (userId: string, password: string) => {
+    const { data, error } = await supabase.functions.invoke('update-user-password', {
+        body: { userId, password },
+    });
+    if (error) {
+        console.error("Error invoking update-user-password function:", error);
+        // Provide a more helpful error to the developer/admin.
+        throw new Error("El servidor rechazó la solicitud de cambio de contraseña. Verifique los logs de la Edge Function 'update-user-password' en Supabase.");
+    }
+    return data;
+}
+
 
 /**
  * Checks if at least one admin user exists in the system.
@@ -559,6 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
         (document.getElementById('edit-username') as HTMLInputElement).value = user.username;
         (document.getElementById('edit-especialidad') as HTMLSelectElement).value = user.especialidad;
         (document.getElementById('edit-matricula') as HTMLInputElement).value = user.matricula || '';
+        (document.getElementById('edit-password') as HTMLInputElement).value = '';
         
         const especialidadSelect = document.getElementById('edit-especialidad') as HTMLSelectElement;
         const matriculaGroup = document.getElementById('edit-matricula-group');
@@ -586,19 +605,9 @@ document.addEventListener('DOMContentLoaded', () => {
         editUserForm.reset();
         (document.getElementById('edit-user-error') as HTMLElement).style.display = 'none';
         (document.getElementById('edit-user-success') as HTMLElement).style.display = 'none';
+        (document.getElementById('edit-password') as HTMLInputElement).value = '';
         editUserModal.style.display = 'none';
     };
-
-    document.body.addEventListener('click', async (e) => {
-        const target = e.target as HTMLElement;
-        if (target.classList.contains('edit-user-btn')) {
-            const userId = target.dataset.userId;
-            if (userId) await openEditUserModal(userId);
-        }
-        if (target.classList.contains('modal-close-btn') || target.id === 'cancel-edit-btn' || target.id === 'edit-user-modal') {
-            closeEditUserModal();
-        }
-    });
 
     editUserForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -620,6 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const especialidad = (document.getElementById('edit-especialidad') as HTMLSelectElement).value;
             const matricula = (document.getElementById('edit-matricula') as HTMLInputElement).value;
             const firmaInput = (document.getElementById('edit-firma') as HTMLInputElement);
+            const password = (document.getElementById('edit-password') as HTMLInputElement).value;
 
             const profileData: Partial<Omit<UserProfile, 'id' | 'username'>> = {
                 nombre,
@@ -632,7 +642,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 profileData.firma = await fileToBase64(firmaInput.files[0]);
             }
 
-            await apiUpdateUserProfile(userId, profileData);
+            // Update profile and password in parallel
+            const updatePromises = [apiUpdateUserProfile(userId, profileData)];
+            if (password.trim()) {
+                updatePromises.push(apiUpdateUserPassword(userId, password.trim()));
+            }
+
+            await Promise.all(updatePromises);
             
             successEl.textContent = 'Usuario actualizado exitosamente.';
             successEl.style.display = 'block';
@@ -774,6 +790,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.addEventListener('click', async (e) => {
         const target = e.target as HTMLElement;
 
+        if (target.classList.contains('edit-user-btn')) {
+            const userId = target.dataset.userId;
+            if (userId) await openEditUserModal(userId);
+        }
+        if (target.classList.contains('modal-close-btn') || target.id === 'cancel-edit-btn' || target.id === 'edit-user-modal') {
+            closeEditUserModal();
+        }
+
         if (target.classList.contains('sign-section-btn')) {
             const user = getCurrentUser();
             if (!user || !user.firma) {
@@ -855,56 +879,60 @@ document.addEventListener('DOMContentLoaded', () => {
         if (target.classList.contains('delete-row-btn')) {
             target.closest('tr')?.remove();
         }
-    });
 
-    // --- Global Patient Loader ---
-    document.getElementById('global-load-patient-btn')?.addEventListener('click', async (e) => {
-        const loadButton = e.target as HTMLButtonElement;
-        const dniInput = document.getElementById('global-dni-search') as HTMLInputElement;
-        
-        loadButton.disabled = true;
-        loadButton.textContent = 'Cargando...';
+        if (target.classList.contains('load-patient-btn')) {
+            const loadButton = target as HTMLButtonElement;
+            const prefix = loadButton.dataset.prefix;
+            if (!prefix) return;
 
-        const dni = dniInput.value.trim();
-        if (!dni) {
-            alert('Por favor, ingrese un DNI para buscar.');
-            loadButton.disabled = false;
-            loadButton.textContent = 'Cargar Paciente';
-            return;
-        }
+            const dniInput = document.getElementById(`${prefix}-dni`) as HTMLInputElement;
+            const originalText = loadButton.textContent;
+            
+            loadButton.disabled = true;
+            loadButton.textContent = 'Cargando...';
 
-        try {
-            const patientData = await apiGetPatientByDni(dni);
-
-            if (!patientData) {
-                alert('No se encontraron datos para este DNI. Puede crear un nuevo registro.');
-                const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-                forms.forEach(form => form.reset());
-                unlockForm();
-                
-                // Set the DNI in ALL forms for a new patient
-                ['hd', 'ge', 'cg', 'ca'].forEach(prefix => {
-                    const dniField = document.getElementById(`${prefix}-dni`) as HTMLInputElement;
-                    if (dniField) dniField.value = dni;
-                });
-
-                // Trigger name sync for the first form
-                const firstDNI = document.getElementById('hd-dni');
-                if (firstDNI) firstDNI.dispatchEvent(new Event('input', { bubbles: true }));
-
+            const dni = dniInput.value.trim();
+            if (!dni) {
+                alert('Por favor, ingrese un DNI para buscar.');
+                loadButton.disabled = false;
+                loadButton.textContent = originalText;
                 return;
             }
-            
-            loadPatientDataIntoForms(patientData);
-            alert('Datos del paciente cargados en todas las secciones.');
-        } catch (error) {
-            alert('Error al cargar los datos del paciente.');
-            console.error("Failed to load patient:", error);
-        } finally {
-            loadButton.disabled = false;
-            loadButton.textContent = 'Cargar Paciente';
+
+            try {
+                const patientData = await apiGetPatientByDni(dni);
+
+                if (!patientData) {
+                    alert('No se encontraron datos para este DNI. Puede crear un nuevo registro.');
+                    const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
+                    forms.forEach(form => form.reset());
+                    unlockForm();
+                    
+                    // Set the DNI in ALL forms for a new patient
+                    ['hd', 'ge', 'cg', 'ca'].forEach(p => {
+                        const dniField = document.getElementById(`${p}-dni`) as HTMLInputElement;
+                        if (dniField) dniField.value = dni;
+                    });
+
+                    // Trigger name sync for the first form
+                    const firstDNI = document.getElementById('hd-dni');
+                    if (firstDNI) firstDNI.dispatchEvent(new Event('input', { bubbles: true }));
+
+                    return;
+                }
+                
+                loadPatientDataIntoForms(patientData);
+                alert('Datos del paciente cargados en todas las secciones.');
+            } catch (error) {
+                alert('Error al cargar los datos del paciente.');
+                console.error("Failed to load patient:", error);
+            } finally {
+                loadButton.disabled = false;
+                loadButton.textContent = originalText;
+            }
         }
     });
+
 
     // --- Patient Name Auto-Population Logic ---
     const syncPatientNames = (prefix: string) => {
@@ -938,6 +966,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     ['hd', 'ge', 'cg', 'ca'].forEach(syncPatientNames);
+
+    // --- Helper to get DNI from the currently active tab ---
+    const getActiveDni = (): string => {
+        const activeTab = document.querySelector('.tab-content.active');
+        if (!activeTab) return '';
+        // All DNI inputs share the same 'name' attribute
+        const dniInput = activeTab.querySelector('form input[name="DNI"]') as HTMLInputElement;
+        return dniInput ? dniInput.value.trim() : '';
+    };
     
     // --- Import / Export Logic ---
     const fileInput = document.getElementById('import-clinic-input') as HTMLInputElement;
@@ -947,8 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('export-clinic-btn')?.addEventListener('click', async () => {
-        const dniInput = document.getElementById('global-dni-search') as HTMLInputElement;
-        const dni = dniInput?.value.trim();
+        const dni = getActiveDni();
 
         if (!dni) {
             alert('No hay un paciente cargado. Por favor, cargue un paciente por DNI antes de exportar.');
@@ -997,12 +1033,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 delete importedData.dischargeTimestamp;
 
                 let dni = '';
-                const mainTabs = ['hemodinamia', 'grupo-endoscopico', 'cirugias', 'cirugia-anestesia'];
-                for (const tab of mainTabs) {
-                    // Check within the nested object for dni
-                    const tabData = importedData[tab];
+                // Find the DNI from any of the main tabs within the imported data
+                const mainTabIds = ['hemodinamia', 'grupo-endoscopico', 'cirugias', 'cirugia-anestesia'];
+                for (const tabId of mainTabIds) {
+                    const tabData = importedData[tabId];
                     if (tabData && tabData.dni) {
                         dni = tabData.dni;
+                        // Set DNI in all forms
+                        ['hd', 'ge', 'cg', 'ca'].forEach(prefix => {
+                            const dniField = document.getElementById(`${prefix}-dni`) as HTMLInputElement;
+                            if (dniField) dniField.value = dni;
+                        });
                         break;
                     }
                 }
@@ -1011,7 +1052,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error('No se pudo encontrar un DNI en el archivo importado.');
                 }
                 
-                (document.getElementById('global-dni-search') as HTMLInputElement).value = dni;
                 await apiSavePatient(dni, importedData);
                 loadPatientDataIntoForms(importedData);
                 
@@ -1037,62 +1077,59 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateAltaBtn = document.getElementById('generate-alta-btn');
     
     const setDischargeTimestamp = async () => {
-        const dniInput = document.getElementById('global-dni-search') as HTMLInputElement;
-        if (dniInput) {
-            const dni = dniInput.value.trim();
-            if (!dni) return;
+        const dni = getActiveDni();
+        if (!dni) return;
 
-            try {
-                const patientData = await apiGetPatientByDni(dni) || {};
-                
-                // Save all current form data before setting the timestamp
-                const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-                allForms.forEach(form => {
-                    const tabId = form.closest('.tab-content')?.id;
-                    if (!tabId || tabId === 'admin-usuarios') return;
+        try {
+            const patientData = await apiGetPatientByDni(dni) || {};
+            
+            // Save all current form data before setting the timestamp
+            const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
+            allForms.forEach(form => {
+                const tabId = form.closest('.tab-content')?.id;
+                if (!tabId || tabId === 'admin-usuarios') return;
 
-                    const prefix = form.id.replace('form', '');
-                    const formData: { [key: string]: any } = {};
-                    const elements = form.elements;
-                    for (let i = 0; i < elements.length; i++) {
-                        const item = elements[i] as HTMLInputElement;
-                        if (item.id && item.id.startsWith(prefix)) {
-                            const key = item.id.substring(prefix.length);
-                            if (item.type === 'checkbox') {
-                                formData[key] = item.checked;
-                            } else {
-                                formData[key] = item.value;
-                            }
+                const prefix = form.id.replace('form', '');
+                const formData: { [key: string]: any } = {};
+                const elements = form.elements;
+                for (let i = 0; i < elements.length; i++) {
+                    const item = elements[i] as HTMLInputElement;
+                    if (item.id && item.id.startsWith(prefix)) {
+                        const key = item.id.substring(prefix.length);
+                        if (item.type === 'checkbox') {
+                            formData[key] = item.checked;
+                        } else {
+                            formData[key] = item.value;
                         }
                     }
-                     form.querySelectorAll('table[data-table-name]').forEach(table => {
-                        const tableName = (table as HTMLElement).dataset.tableName;
-                        if(!tableName) return;
-                        const tableData: any[] = [];
-                        table.querySelectorAll('tbody tr').forEach(row => {
-                            const rowData: { [key: string]: any } = {};
-                            row.querySelectorAll('input, select, textarea').forEach(input => {
-                                const el = input as HTMLInputElement;
-                                if (el.name) rowData[el.name] = el.value;
-                            });
-                            tableData.push(rowData);
-                        });
-                        formData[tableName] = tableData;
-                    });
-                    patientData[tabId] = formData;
-                });
-
-                if (!patientData.dischargeTimestamp) {
-                    patientData.dischargeTimestamp = Date.now();
-                    await apiSavePatient(dni, patientData);
-                    alert('Alta generada exitosamente. Este registro se bloqueará para edición en 24 horas.');
-                } else {
-                     await apiSavePatient(dni, patientData); // Save data even if timestamp exists
                 }
-            } catch (error) {
-                console.error('Failed to set discharge timestamp', error);
-                alert('Error al registrar la fecha de alta.');
+                 form.querySelectorAll('table[data-table-name]').forEach(table => {
+                    const tableName = (table as HTMLElement).dataset.tableName;
+                    if(!tableName) return;
+                    const tableData: any[] = [];
+                    table.querySelectorAll('tbody tr').forEach(row => {
+                        const rowData: { [key: string]: any } = {};
+                        row.querySelectorAll('input, select, textarea').forEach(input => {
+                            const el = input as HTMLInputElement;
+                            if (el.name) rowData[el.name] = el.value;
+                        });
+                        tableData.push(rowData);
+                    });
+                    formData[tableName] = tableData;
+                });
+                patientData[tabId] = formData;
+            });
+
+            if (!patientData.dischargeTimestamp) {
+                patientData.dischargeTimestamp = Date.now();
+                await apiSavePatient(dni, patientData);
+                alert('Alta generada exitosamente. Este registro se bloqueará para edición en 24 horas.');
+            } else {
+                 await apiSavePatient(dni, patientData); // Save data even if timestamp exists
             }
+        } catch (error) {
+            console.error('Failed to set discharge timestamp', error);
+            alert('Error al registrar la fecha de alta.');
         }
     };
 

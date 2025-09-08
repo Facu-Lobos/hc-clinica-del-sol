@@ -101,24 +101,6 @@ header {
     color: var(--dark-gray);
 }
 
-.global-patient-search {
-    padding: 1.5rem 2rem 0;
-    max-width: 1200px;
-    margin: 0 auto;
-    background-color: var(--light-gray);
-}
-
-.global-patient-search .form-group {
-    background: var(--white);
-    padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-}
-
-.global-patient-search label {
-    font-size: 1.2rem;
-}
-
 main {
     padding: 2rem;
     max-width: 1200px;
@@ -297,6 +279,12 @@ main {
 .form-group label {
     font-weight: 500;
     color: var(--dark-gray);
+}
+
+.form-group small {
+    font-size: 0.85rem;
+    color: var(--dark-gray);
+    margin-top: 0.25rem;
 }
 
 .form-group input,
@@ -631,9 +619,6 @@ footer {
         gap: 0.5rem;
         align-items: center;
         width: 100%;
-    }
-    .global-patient-search {
-        padding: 1rem 1rem 0;
     }
     main {
         padding: 1rem;
