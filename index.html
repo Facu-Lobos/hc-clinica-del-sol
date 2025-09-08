@@ -122,6 +122,15 @@
 
 
     <div id="app-container" style="display: none;">
+        <div class="global-patient-search">
+            <div class="form-group">
+                <label for="global-dni-search">Buscar Paciente por DNI</label>
+                <div class="input-with-button">
+                    <input type="text" id="global-dni-search" placeholder="Ingrese DNI y presione Cargar Paciente">
+                    <button type="button" id="global-load-patient-btn" class="btn-primary">Cargar Paciente</button>
+                </div>
+            </div>
+        </div>
         <div id="lock-banner" class="lock-banner" style="display: none;"></div>
         <main>
             <div class="tabs">
@@ -144,13 +153,7 @@
                             <div class="form-group"><label for="hd-apellido">Apellido</label><input type="text" id="hd-apellido" name="Apellido" required></div>
                             <div class="form-group"><label for="hd-edad">Edad</label><input type="number" id="hd-edad" name="Edad" required></div>
                             <div class="form-group"><label for="hd-nombres">Nombres</label><input type="text" id="hd-nombres" name="Nombres" required></div>
-                            <div class="form-group">
-                                <label for="hd-dni">DNI</label>
-                                <div class="input-with-button">
-                                    <input type="text" id="hd-dni" name="DNI" required>
-                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="hd-">Cargar</button>
-                                </div>
-                            </div>
+                            <div class="form-group"><label for="hd-dni">DNI</label><input type="text" id="hd-dni" name="DNI" required></div>
                             <div class="form-group full-width"><label for="hd-domicilio">Domicilio</label><input type="text" id="hd-domicilio" name="Domicilio" required></div>
                             <div class="form-group"><label for="hd-telefono">Teléfono</label><input type="tel" id="hd-telefono" name="Teléfono" required></div>
                             <div class="form-group"><label for="hd-estado-civil">Estado Civil</label><input type="text" id="hd-estado-civil" name="Estado Civil" required></div>
@@ -306,13 +309,7 @@
                             <div class="form-group"><label for="ge-apellido">Apellido</label><input type="text" id="ge-apellido" name="Apellido" required></div>
                             <div class="form-group"><label for="ge-edad">Edad</label><input type="number" id="ge-edad" name="Edad" required></div>
                             <div class="form-group"><label for="ge-nombres">Nombres</label><input type="text" id="ge-nombres" name="Nombres" required></div>
-                            <div class="form-group">
-                                <label for="ge-dni">DNI</label>
-                                <div class="input-with-button">
-                                    <input type="text" id="ge-dni" name="DNI" required>
-                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="ge-">Cargar</button>
-                                </div>
-                            </div>
+                            <div class="form-group"><label for="ge-dni">DNI</label><input type="text" id="ge-dni" name="DNI" required></div>
                             <div class="form-group full-width"><label for="ge-domicilio">Domicilio</label><input type="text" id="ge-domicilio" name="Domicilio" required></div>
                             <div class="form-group"><label for="ge-telefono">Teléfono</label><input type="tel" id="ge-telefono" name="Teléfono" required></div>
                             <div class="form-group"><label for="ge-estado-civil">Estado Civil</label><input type="text" id="ge-estado-civil" name="Estado Civil" required></div>
@@ -423,13 +420,7 @@
                             <div class="form-group"><label for="cg-apellido">Apellido</label><input type="text" id="cg-apellido" name="Apellido" required></div>
                             <div class="form-group"><label for="cg-edad">Edad</label><input type="number" id="cg-edad" name="Edad" required></div>
                             <div class="form-group"><label for="cg-nombres">Nombres</label><input type="text" id="cg-nombres" name="Nombres" required></div>
-                             <div class="form-group">
-                                <label for="cg-dni">DNI</label>
-                                <div class="input-with-button">
-                                    <input type="text" id="cg-dni" name="DNI" required>
-                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="cg-">Cargar</button>
-                                </div>
-                            </div>
+                             <div class="form-group"><label for="cg-dni">DNI</label><input type="text" id="cg-dni" name="DNI" required></div>
                             <div class="form-group full-width"><label for="cg-domicilio">Domicilio</label><input type="text" id="cg-domicilio" name="Domicilio" required></div>
                             <div class="form-group"><label for="cg-telefono">Teléfono</label><input type="tel" id="cg-telefono" name="Teléfono" required></div>
                             <div class="form-group"><label for="cg-estado-civil">Estado Civil</label><input type="text" id="cg-estado-civil" name="Estado Civil" required></div>
@@ -566,13 +557,7 @@
                             <div class="form-group"><label for="ca-apellido">Apellido</label><input type="text" id="ca-apellido" name="Apellido" required></div>
                             <div class="form-group"><label for="ca-edad">Edad</label><input type="number" id="ca-edad" name="Edad" required></div>
                             <div class="form-group"><label for="ca-nombres">Nombres</label><input type="text" id="ca-nombres" name="Nombres" required></div>
-                             <div class="form-group">
-                                <label for="ca-dni">DNI</label>
-                                <div class="input-with-button">
-                                    <input type="text" id="ca-dni" name="DNI" required>
-                                    <button type="button" class="btn-secondary load-patient-btn" data-form-prefix="ca-">Cargar</button>
-                                </div>
-                            </div>
+                             <div class="form-group"><label for="ca-dni">DNI</label><input type="text" id="ca-dni" name="DNI" required></div>
                             <div class="form-group full-width"><label for="ca-domicilio">Domicilio</label><input type="text" id="ca-domicilio" name="Domicilio" required></div>
                             <div class="form-group"><label for="ca-telefono">Teléfono</label><input type="tel" id="ca-telefono" name="Teléfono" required></div>
                             <div class="form-group"><label for="ca-estado-civil">Estado Civil</label><input type="text" id="ca-estado-civil" name="Estado Civil" required></div>
@@ -872,6 +857,7 @@
                                     <th>Nombre Completo</th>
                                     <th>Usuario</th>
                                     <th>Especialidad</th>
+                                    <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="users-table-body">
@@ -892,6 +878,61 @@
                 <button id="generate-alta-btn" class="btn-primary">Generar Alta y PDF</button>
             </div>
         </footer>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="edit-user-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <button type="button" class="modal-close-btn">&times;</button>
+            <h3>Editar Usuario</h3>
+            <form id="edit-user-form">
+                <input type="hidden" id="edit-user-id">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="edit-nombre">Nombre</label>
+                        <input type="text" id="edit-nombre" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-apellido">Apellido</label>
+                        <input type="text" id="edit-apellido" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="edit-username">Usuario (no se puede cambiar)</label>
+                    <input type="text" id="edit-username" disabled>
+                </div>
+                <div class="form-group">
+                    <label for="edit-especialidad">Especialidad / Puesto</label>
+                    <select id="edit-especialidad" required>
+                        <option value="">Seleccione una opción...</option>
+                        <option value="Médico">Médico</option>
+                        <option value="Enfermero">Enfermero</option>
+                        <option value="Anestesista">Anestesista</option>
+                        <option value="Administrativo">Administrativo</option>
+                        <option value="Administrador">Administrador</option>
+                    </select>
+                </div>
+                <div class="form-group" id="edit-matricula-group" style="display: none;">
+                    <label for="edit-matricula">Matrícula</label>
+                    <input type="text" id="edit-matricula">
+                </div>
+                <div class="form-group">
+                    <label for="edit-firma">Reemplazar Firma (opcional)</label>
+                    <input type="file" id="edit-firma" accept="image/png, image/jpeg">
+                    <div id="current-firma-container" class="current-firma">
+                        <p>Firma Actual:</p>
+                        <img id="current-firma-img" src="" alt="Firma Actual" style="display: none;"/>
+                        <span id="no-current-firma">Ninguna</span>
+                    </div>
+                </div>
+                <p id="edit-user-error" class="error-message" style="display: none;"></p>
+                <p id="edit-user-success" class="success-message" style="display: none;"></p>
+                <div class="form-actions" style="justify-content: space-between;">
+                     <button type="button" id="cancel-edit-btn" class="btn-secondary">Cancelar</button>
+                     <button type="submit" class="btn-primary">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
     </div>
 </body>
 </html>
