@@ -127,6 +127,46 @@ const apiGetAllUsers = async (): Promise<UserProfile[]> => {
 }
 
 /**
+ * Fetches a single user profile by their ID.
+ * @param userId The UUID of the user.
+ * @returns A user profile object or null.
+ */
+const apiGetUserProfileById = async (userId: string): Promise<UserProfile | null> => {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+    if (error) {
+        console.error("Error fetching user profile:", error);
+        return null;
+    }
+    return data as UserProfile;
+}
+
+
+/**
+ * Updates a user's profile data in the 'profiles' table.
+ * @param userId The UUID of the user to update.
+ * @param profileData An object with the profile fields to update.
+ */
+const apiUpdateUserProfile = async (userId: string, profileData: Partial<Omit<UserProfile, 'id' | 'username'>>) => {
+     const { data, error } = await supabase
+        .from('profiles')
+        .update(profileData)
+        .eq('id', userId)
+        .select();
+
+    if (error) {
+        console.error("Error updating user profile:", error);
+        throw new Error(`Error al actualizar el perfil: ${error.message}`);
+    }
+    return data;
+}
+
+
+/**
  * Checks if at least one admin user exists in the system.
  * @returns {Promise<boolean>} True if an admin exists, false otherwise.
  */
@@ -432,12 +472,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${user.nombre} ${user.apellido}</td>
                     <td>${user.username}</td>
                     <td>${user.especialidad}</td>
+                    <td><button class="btn-secondary btn-sm edit-user-btn" data-user-id="${user.id}">Editar</button></td>
                 `;
                 tableBody.appendChild(row);
             });
         } catch (error) {
             console.error("Could not populate users table", error);
-            tableBody.innerHTML = `<tr><td colspan="3">Error al cargar usuarios.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="4">Error al cargar usuarios.</td></tr>`;
         }
     };
 
@@ -499,14 +540,127 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('create-especialidad')?.addEventListener('change', (e) => {
-        const select = e.target as HTMLSelectElement;
-        const matriculaGroup = document.getElementById('create-matricula-group');
+    // --- Admin Edit User Modal Logic ---
+    const editUserModal = document.getElementById('edit-user-modal');
+    const editUserForm = document.getElementById('edit-user-form') as HTMLFormElement;
+
+    const openEditUserModal = async (userId: string) => {
+        if (!editUserModal || !editUserForm) return;
+        
+        const user = await apiGetUserProfileById(userId);
+        if (!user) {
+            alert("No se pudo cargar la información del usuario.");
+            return;
+        }
+
+        (document.getElementById('edit-user-id') as HTMLInputElement).value = user.id;
+        (document.getElementById('edit-nombre') as HTMLInputElement).value = user.nombre;
+        (document.getElementById('edit-apellido') as HTMLInputElement).value = user.apellido;
+        (document.getElementById('edit-username') as HTMLInputElement).value = user.username;
+        (document.getElementById('edit-especialidad') as HTMLSelectElement).value = user.especialidad;
+        (document.getElementById('edit-matricula') as HTMLInputElement).value = user.matricula || '';
+        
+        const especialidadSelect = document.getElementById('edit-especialidad') as HTMLSelectElement;
+        const matriculaGroup = document.getElementById('edit-matricula-group');
         if (matriculaGroup) {
             const medicalRoles = ['Médico', 'Enfermero', 'Anestesista'];
-            matriculaGroup.style.display = medicalRoles.includes(select.value) ? 'block' : 'none';
+            matriculaGroup.style.display = medicalRoles.includes(especialidadSelect.value) ? 'block' : 'none';
+        }
+
+        const currentFirmaImg = document.getElementById('current-firma-img') as HTMLImageElement;
+        const noCurrentFirma = document.getElementById('no-current-firma') as HTMLSpanElement;
+        if (user.firma) {
+            currentFirmaImg.src = user.firma;
+            currentFirmaImg.style.display = 'block';
+            noCurrentFirma.style.display = 'none';
+        } else {
+            currentFirmaImg.style.display = 'none';
+            noCurrentFirma.style.display = 'inline';
+        }
+
+        editUserModal.style.display = 'flex';
+    };
+
+    const closeEditUserModal = () => {
+        if (!editUserModal || !editUserForm) return;
+        editUserForm.reset();
+        (document.getElementById('edit-user-error') as HTMLElement).style.display = 'none';
+        (document.getElementById('edit-user-success') as HTMLElement).style.display = 'none';
+        editUserModal.style.display = 'none';
+    };
+
+    document.body.addEventListener('click', async (e) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('edit-user-btn')) {
+            const userId = target.dataset.userId;
+            if (userId) await openEditUserModal(userId);
+        }
+        if (target.classList.contains('modal-close-btn') || target.id === 'cancel-edit-btn' || target.id === 'edit-user-modal') {
+            closeEditUserModal();
         }
     });
+
+    editUserForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const submitButton = editUserForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+        const errorEl = document.getElementById('edit-user-error') as HTMLParagraphElement;
+        const successEl = document.getElementById('edit-user-success') as HTMLParagraphElement;
+        
+        errorEl.style.display = 'none';
+        successEl.style.display = 'none';
+        submitButton.disabled = true;
+        submitButton.textContent = 'Guardando...';
+
+        try {
+            const userId = (document.getElementById('edit-user-id') as HTMLInputElement).value;
+            if (!userId) throw new Error("ID de usuario no encontrado.");
+
+            const nombre = (document.getElementById('edit-nombre') as HTMLInputElement).value;
+            const apellido = (document.getElementById('edit-apellido') as HTMLInputElement).value;
+            const especialidad = (document.getElementById('edit-especialidad') as HTMLSelectElement).value;
+            const matricula = (document.getElementById('edit-matricula') as HTMLInputElement).value;
+            const firmaInput = (document.getElementById('edit-firma') as HTMLInputElement);
+
+            const profileData: Partial<Omit<UserProfile, 'id' | 'username'>> = {
+                nombre,
+                apellido,
+                especialidad,
+                matricula: matricula || undefined,
+            };
+
+            if (firmaInput.files && firmaInput.files[0]) {
+                profileData.firma = await fileToBase64(firmaInput.files[0]);
+            }
+
+            await apiUpdateUserProfile(userId, profileData);
+            
+            successEl.textContent = 'Usuario actualizado exitosamente.';
+            successEl.style.display = 'block';
+            await populateUsersTable();
+            setTimeout(closeEditUserModal, 1500);
+
+        } catch (error: any) {
+            errorEl.textContent = `Error: ${error.message}`;
+            errorEl.style.display = 'block';
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = 'Guardar Cambios';
+        }
+    });
+
+    const handleEspecialidadChange = (selectId: string, matriculaGroupId: string) => {
+        const select = document.getElementById(selectId) as HTMLSelectElement;
+        select?.addEventListener('change', () => {
+            const matriculaGroup = document.getElementById(matriculaGroupId);
+            if (matriculaGroup) {
+                const medicalRoles = ['Médico', 'Enfermero', 'Anestesista'];
+                matriculaGroup.style.display = medicalRoles.includes(select.value) ? 'block' : 'none';
+            }
+        });
+    };
+
+    handleEspecialidadChange('create-especialidad', 'create-matricula-group');
+    handleEspecialidadChange('edit-especialidad', 'edit-matricula-group');
 
 
     // --- Tabbed Interface Logic ---
@@ -701,45 +855,54 @@ document.addEventListener('DOMContentLoaded', () => {
         if (target.classList.contains('delete-row-btn')) {
             target.closest('tr')?.remove();
         }
+    });
 
-        if (target.classList.contains('load-patient-btn')) {
-            const loadButton = target as HTMLButtonElement;
-            loadButton.disabled = true;
-            loadButton.textContent = 'Cargando...';
+    // --- Global Patient Loader ---
+    document.getElementById('global-load-patient-btn')?.addEventListener('click', async (e) => {
+        const loadButton = e.target as HTMLButtonElement;
+        const dniInput = document.getElementById('global-dni-search') as HTMLInputElement;
+        
+        loadButton.disabled = true;
+        loadButton.textContent = 'Cargando...';
 
-            const dniInput = target.previousElementSibling as HTMLInputElement;
-            if (!dniInput) return;
+        const dni = dniInput.value.trim();
+        if (!dni) {
+            alert('Por favor, ingrese un DNI para buscar.');
+            loadButton.disabled = false;
+            loadButton.textContent = 'Cargar Paciente';
+            return;
+        }
 
-            const dni = dniInput.value.trim();
-            if (!dni) {
-                alert('Por favor, ingrese un DNI para buscar.');
-                loadButton.disabled = false;
-                loadButton.textContent = 'Cargar';
+        try {
+            const patientData = await apiGetPatientByDni(dni);
+
+            if (!patientData) {
+                alert('No se encontraron datos para este DNI. Puede crear un nuevo registro.');
+                const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
+                forms.forEach(form => form.reset());
+                unlockForm();
+                
+                // Set the DNI in ALL forms for a new patient
+                ['hd', 'ge', 'cg', 'ca'].forEach(prefix => {
+                    const dniField = document.getElementById(`${prefix}-dni`) as HTMLInputElement;
+                    if (dniField) dniField.value = dni;
+                });
+
+                // Trigger name sync for the first form
+                const firstDNI = document.getElementById('hd-dni');
+                if (firstDNI) firstDNI.dispatchEvent(new Event('input', { bubbles: true }));
+
                 return;
             }
-
-            try {
-                const patientData = await apiGetPatientByDni(dni);
-
-                if (!patientData) {
-                    alert('No se encontraron datos para este DNI. Puede crear un nuevo registro.');
-                    const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-                    forms.forEach(form => form.reset());
-                    unlockForm();
-                    // Set the DNI in the active form for a new patient
-                    dniInput.value = dni;
-                    return;
-                }
-                
-                loadPatientDataIntoForms(patientData);
-                alert('Datos del paciente cargados en todas las secciones.');
-            } catch (error) {
-                alert('Error al cargar los datos del paciente.');
-                console.error("Failed to load patient:", error);
-            } finally {
-                loadButton.disabled = false;
-                loadButton.textContent = 'Cargar';
-            }
+            
+            loadPatientDataIntoForms(patientData);
+            alert('Datos del paciente cargados en todas las secciones.');
+        } catch (error) {
+            alert('Error al cargar los datos del paciente.');
+            console.error("Failed to load patient:", error);
+        } finally {
+            loadButton.disabled = false;
+            loadButton.textContent = 'Cargar Paciente';
         }
     });
 
@@ -784,7 +947,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('export-clinic-btn')?.addEventListener('click', async () => {
-        const dniInput = document.querySelector('input[id$="-dni"]:not([value=""])') as HTMLInputElement;
+        const dniInput = document.getElementById('global-dni-search') as HTMLInputElement;
         const dni = dniInput?.value.trim();
 
         if (!dni) {
@@ -829,11 +992,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const text = e.target?.result as string;
                 const importedData = JSON.parse(text);
                 
+                // USER REQUEST: Do not lock files on import.
+                // We achieve this by removing the timestamp that triggers the lock.
+                delete importedData.dischargeTimestamp;
+
                 let dni = '';
                 const mainTabs = ['hemodinamia', 'grupo-endoscopico', 'cirugias', 'cirugia-anestesia'];
                 for (const tab of mainTabs) {
-                    if (importedData[tab]?.dni) {
-                        dni = importedData[tab].dni;
+                    // Check within the nested object for dni
+                    const tabData = importedData[tab];
+                    if (tabData && tabData.dni) {
+                        dni = tabData.dni;
                         break;
                     }
                 }
@@ -841,7 +1010,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!dni) {
                     throw new Error('No se pudo encontrar un DNI en el archivo importado.');
                 }
-
+                
+                (document.getElementById('global-dni-search') as HTMLInputElement).value = dni;
                 await apiSavePatient(dni, importedData);
                 loadPatientDataIntoForms(importedData);
                 
@@ -867,8 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateAltaBtn = document.getElementById('generate-alta-btn');
     
     const setDischargeTimestamp = async () => {
-        const activeContent = document.querySelector('.tab-content.active');
-        const dniInput = activeContent?.querySelector('input[id$="-dni"]') as HTMLInputElement;
+        const dniInput = document.getElementById('global-dni-search') as HTMLInputElement;
         if (dniInput) {
             const dni = dniInput.value.trim();
             if (!dni) return;
@@ -880,7 +1049,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
                 allForms.forEach(form => {
                     const tabId = form.closest('.tab-content')?.id;
-                    if (!tabId) return;
+                    if (!tabId || tabId === 'admin-usuarios') return;
 
                     const prefix = form.id.replace('form', '');
                     const formData: { [key: string]: any } = {};
