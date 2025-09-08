@@ -232,12 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const unlockForm = () => {
         if (lockBanner) lockBanner.style.display = 'none';
 
-        const saveBtn = document.getElementById('save-progress-btn') as HTMLButtonElement;
         const generateBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
         const importBtn = document.getElementById('import-clinic-btn') as HTMLButtonElement;
         const exportBtn = document.getElementById('export-clinic-btn') as HTMLButtonElement;
         
-        if(saveBtn) saveBtn.disabled = false;
         if(generateBtn) generateBtn.disabled = false;
         if(importBtn) importBtn.disabled = false;
         if(exportBtn) exportBtn.disabled = false;
@@ -258,12 +256,10 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.forEach(el => (el as HTMLInputElement).disabled = true);
         });
 
-        const saveBtn = document.getElementById('save-progress-btn') as HTMLButtonElement;
         const generateBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
         const importBtn = document.getElementById('import-clinic-btn') as HTMLButtonElement;
         const exportBtn = document.getElementById('export-clinic-btn') as HTMLButtonElement;
 
-        if (saveBtn) saveBtn.disabled = true;
         if (generateBtn) generateBtn.disabled = true;
         if (importBtn) importBtn.disabled = true;
         if (exportBtn) exportBtn.disabled = true;
@@ -288,6 +284,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (adminTab) {
             const adminExists = await apiDoesAdminExist();
             adminTab.style.display = (user.especialidad === 'Administrador' || !adminExists) ? 'block' : 'none';
+        }
+
+        // Change button text based on user role
+        const generateAltaBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
+        if (generateAltaBtn) {
+            if (user.especialidad === 'Médico' || user.especialidad === 'Administrador') {
+                generateAltaBtn.textContent = 'Generar Alta y PDF';
+            } else if (user.especialidad === 'Administrativo') {
+                generateAltaBtn.textContent = 'Generar PDF';
+            }
         }
 
         unlockForm();
@@ -770,87 +776,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ['hd', 'ge', 'cg', 'ca'].forEach(syncPatientNames);
     
-    // --- Save Patient Progress ---
-    document.getElementById('save-progress-btn')?.addEventListener('click', async () => {
-        const saveButton = document.getElementById('save-progress-btn') as HTMLButtonElement;
-        saveButton.disabled = true;
-        saveButton.textContent = 'Guardando...';
-
-        const activeContent = document.querySelector('.tab-content.active');
-        if (!activeContent) {
-            saveButton.disabled = false;
-            saveButton.textContent = 'Guardar Progreso';
-            return;
-        }
-        
-        const form = activeContent.querySelector('form');
-        if (!form) {
-            saveButton.disabled = false;
-            saveButton.textContent = 'Guardar Progreso';
-            return;
-        }
-        
-        const activeTabId = activeContent.id;
-        const prefix = form.id.replace('form', '');
-        const dniInput = document.getElementById(`${prefix}dni`) as HTMLInputElement;
-        const dni = dniInput?.value.trim();
-
-        if (!dni) {
-            alert('Por favor, complete el DNI del paciente para poder guardar.');
-            dniInput?.focus();
-            saveButton.disabled = false;
-            saveButton.textContent = 'Guardar Progreso';
-            return;
-        }
-
-        const formData: { [key: string]: any } = {};
-        
-        const elements = form.elements;
-        for (let i = 0; i < elements.length; i++) {
-            const item = elements[i] as HTMLInputElement;
-            if (item.id && item.id.startsWith(prefix)) {
-                const key = item.id.substring(prefix.length);
-                if(item.type === 'checkbox'){
-                    formData[key] = item.checked;
-                } else {
-                    formData[key] = item.value;
-                }
-            }
-        }
-        
-        form.querySelectorAll('table[data-table-name]').forEach(table => {
-            const tableName = (table as HTMLElement).dataset.tableName;
-            if(!tableName) return;
-
-            const tableData: any[] = [];
-            table.querySelectorAll('tbody tr').forEach(row => {
-                const rowData: { [key: string]: any } = {};
-                row.querySelectorAll('input, select, textarea').forEach(input => {
-                    const el = input as HTMLInputElement;
-                    if (el.name) {
-                        rowData[el.name] = el.value;
-                    }
-                });
-                tableData.push(rowData);
-            });
-            formData[tableName] = tableData;
-        });
-
-        try {
-            const patientData = await apiGetPatientByDni(dni) || {};
-            patientData[activeTabId] = formData;
-            
-            await apiSavePatient(dni, patientData);
-            alert('¡Progreso guardado exitosamente!');
-        } catch (error) {
-            alert('Error al guardar el progreso.');
-            console.error('Failed to save progress:', error);
-        } finally {
-            saveButton.disabled = false;
-            saveButton.textContent = 'Guardar Progreso';
-        }
-    });
-    
     // --- Import / Export Logic ---
     const fileInput = document.getElementById('import-clinic-input') as HTMLInputElement;
 
@@ -951,10 +876,49 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const patientData = await apiGetPatientByDni(dni) || {};
                 
+                // Save all current form data before setting the timestamp
+                const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
+                allForms.forEach(form => {
+                    const tabId = form.closest('.tab-content')?.id;
+                    if (!tabId) return;
+
+                    const prefix = form.id.replace('form', '');
+                    const formData: { [key: string]: any } = {};
+                    const elements = form.elements;
+                    for (let i = 0; i < elements.length; i++) {
+                        const item = elements[i] as HTMLInputElement;
+                        if (item.id && item.id.startsWith(prefix)) {
+                            const key = item.id.substring(prefix.length);
+                            if (item.type === 'checkbox') {
+                                formData[key] = item.checked;
+                            } else {
+                                formData[key] = item.value;
+                            }
+                        }
+                    }
+                     form.querySelectorAll('table[data-table-name]').forEach(table => {
+                        const tableName = (table as HTMLElement).dataset.tableName;
+                        if(!tableName) return;
+                        const tableData: any[] = [];
+                        table.querySelectorAll('tbody tr').forEach(row => {
+                            const rowData: { [key: string]: any } = {};
+                            row.querySelectorAll('input, select, textarea').forEach(input => {
+                                const el = input as HTMLInputElement;
+                                if (el.name) rowData[el.name] = el.value;
+                            });
+                            tableData.push(rowData);
+                        });
+                        formData[tableName] = tableData;
+                    });
+                    patientData[tabId] = formData;
+                });
+
                 if (!patientData.dischargeTimestamp) {
                     patientData.dischargeTimestamp = Date.now();
                     await apiSavePatient(dni, patientData);
                     alert('Alta generada exitosamente. Este registro se bloqueará para edición en 24 horas.');
+                } else {
+                     await apiSavePatient(dni, patientData); // Save data even if timestamp exists
                 }
             } catch (error) {
                 console.error('Failed to set discharge timestamp', error);
@@ -1308,7 +1272,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawMedicalDischargePage(patientName, patientDNI);
                 
                 pdf.save(`hemodinamia-${getValue('apellido')}-${getValue('dni')}.pdf`);
-                await setDischargeTimestamp();
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
+                    await setDischargeTimestamp();
+                }
 
             } else if (activeContent.id === 'grupo-endoscopico') {
                 const prefix = 'ge-';
@@ -1465,7 +1431,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawMedicalDischargePage(patientName, patientDNI);
 
                 pdf.save(`grupo-endoscopico-${getValue('apellido')}-${getValue('dni')}.pdf`);
-                await setDischargeTimestamp();
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
+                    await setDischargeTimestamp();
+                }
 
             } else if (activeContent.id === 'cirugias') {
                 const prefix = 'cg-';
@@ -1652,7 +1620,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawMedicalDischargePage(patientName, patientDNI);
 
                 pdf.save(`cirugias-${getValue('apellido')}-${getValue('dni')}.pdf`);
-                await setDischargeTimestamp();
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
+                    await setDischargeTimestamp();
+                }
 
             } else if (activeContent.id === 'cirugia-anestesia') {
                 const prefix = 'ca-';
@@ -2009,7 +1979,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 link.click();
                 URL.revokeObjectURL(link.href);
 
-                await setDischargeTimestamp();
+                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
+                    await setDischargeTimestamp();
+                }
             }
 
         } catch (error) {
