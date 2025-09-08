@@ -101,6 +101,24 @@ header {
     color: var(--dark-gray);
 }
 
+.global-patient-search {
+    padding: 1.5rem 2rem 0;
+    max-width: 1200px;
+    margin: 0 auto;
+    background-color: var(--light-gray);
+}
+
+.global-patient-search .form-group {
+    background: var(--white);
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.global-patient-search label {
+    font-size: 1.2rem;
+}
+
 main {
     padding: 2rem;
     max-width: 1200px;
@@ -156,6 +174,17 @@ main {
     margin-bottom: 1rem;
     text-align: center;
 }
+
+.success-message {
+    color: var(--success-green);
+    background-color: #dff0d8;
+    border: 1px solid var(--success-green);
+    padding: 0.75rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
 
 .powered-by {
     margin-top: 2rem;
@@ -375,10 +404,11 @@ hr {
     transition: background-color 0.2s, transform 0.1s;
 }
 
-footer .btn-primary:disabled, footer .btn-secondary:disabled, footer .btn-export:disabled {
+footer .btn-primary:disabled, footer .btn-secondary:disabled, footer .btn-export:disabled,
+.modal-content .btn-primary:disabled, .modal-content .btn-secondary:disabled {
     cursor: not-allowed;
     opacity: 0.7;
-    display: inline-block; /* Keep footer buttons visible when disabled */
+    display: inline-block;
 }
 
 .btn-primary {
@@ -410,6 +440,11 @@ footer .btn-primary:disabled, footer .btn-secondary:disabled, footer .btn-export
 
 .btn-primary:active, .btn-secondary:active, .btn-export:active {
     transform: translateY(1px);
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
 }
 
 
@@ -459,6 +494,9 @@ td input {
 }
 .delete-row-btn:disabled {
     display: none;
+}
+td .btn-secondary {
+    display: inline-block; /* Ensure edit button is always visible */
 }
 
 footer {
@@ -513,6 +551,75 @@ footer {
     animation: fadeIn 0.5s;
 }
 
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    animation: fadeIn 0.3s;
+}
+
+.modal-content {
+    background-color: var(--white);
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    animation: slideIn 0.3s;
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-content h3 {
+    margin-top: 0;
+    color: var(--primary-blue);
+    margin-bottom: 1.5rem;
+}
+
+.modal-close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    color: var(--dark-gray);
+    cursor: pointer;
+}
+
+.current-firma {
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+    border: 1px dashed var(--medium-gray);
+    border-radius: 4px;
+}
+.current-firma p {
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+.current-firma img {
+    max-width: 150px;
+    max-height: 50px;
+    background: #f9f9f9;
+}
+
+
 @media (max-width: 768px) {
     header {
         flex-direction: column;
@@ -524,6 +631,9 @@ footer {
         gap: 0.5rem;
         align-items: center;
         width: 100%;
+    }
+    .global-patient-search {
+        padding: 1rem 1rem 0;
     }
     main {
         padding: 1rem;
