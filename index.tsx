@@ -2252,8 +2252,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 link.href = URL.createObjectURL(blob);
                 const filename = `cirugia-anestesia-${getValue('apellido')}-${getValue('dni')}.pdf`;
                 link.download = filename;
+                document.body.appendChild(link);
                 link.click();
-                URL.revokeObjectURL(link.href);
+                
+                // Clean up after a short delay to ensure the download initiates and doesn't block UI.
+                setTimeout(() => {
+                    if (link.parentNode) {
+                        document.body.removeChild(link);
+                    }
+                    URL.revokeObjectURL(link.href);
+                }, 100);
 
                 if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
                     await setDischargeTimestamp();
