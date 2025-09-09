@@ -976,6 +976,56 @@ document.addEventListener('DOMContentLoaded', () => {
         return dniInput ? dniInput.value.trim() : '';
     };
     
+    // --- Collect and Save All Form Data ---
+    const collectAndSaveAllData = async (): Promise<any> => {
+        const dni = getActiveDni();
+        if (!dni) {
+            throw new Error('No se puede guardar sin un DNI en la pestaña activa.');
+        }
+
+        const patientData = await apiGetPatientByDni(dni) || {};
+
+        const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
+        allForms.forEach(form => {
+            const tabId = form.closest('.tab-content')?.id;
+            if (!tabId || tabId === 'admin-usuarios') return;
+
+            const prefix = form.id.replace('form', '');
+            const formData: { [key: string]: any } = {};
+            const elements = form.elements;
+            for (let i = 0; i < elements.length; i++) {
+                const item = elements[i] as HTMLInputElement;
+                if (item.id && item.id.startsWith(prefix)) {
+                    const key = item.id.substring(prefix.length);
+                    if (item.type === 'checkbox') {
+                        formData[key] = item.checked;
+                    } else {
+                        formData[key] = item.value;
+                    }
+                }
+            }
+            form.querySelectorAll('table[data-table-name]').forEach(table => {
+                const tableName = (table as HTMLElement).dataset.tableName;
+                if (!tableName) return;
+                const tableData: any[] = [];
+                table.querySelectorAll('tbody tr').forEach(row => {
+                    const rowData: { [key: string]: any } = {};
+                    row.querySelectorAll('input, select, textarea').forEach(input => {
+                        const el = input as HTMLInputElement;
+                        if (el.name) rowData[el.name] = el.value;
+                    });
+                    tableData.push(rowData);
+                });
+                formData[tableName] = tableData;
+            });
+            patientData[tabId] = formData;
+        });
+
+        await apiSavePatient(dni, patientData);
+        return patientData;
+    };
+
+
     // --- Import / Export Logic ---
     const fileInput = document.getElementById('import-clinic-input') as HTMLInputElement;
 
@@ -983,21 +1033,24 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput?.click();
     });
 
-    document.getElementById('export-clinic-btn')?.addEventListener('click', async () => {
-        const dni = getActiveDni();
+    document.getElementById('export-clinic-btn')?.addEventListener('click', async (e) => {
+        const btn = e.target as HTMLButtonElement;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
 
-        if (!dni) {
-            alert('No hay un paciente cargado. Por favor, cargue un paciente por DNI antes de exportar.');
-            return;
-        }
         try {
-            const patientData = await apiGetPatientByDni(dni);
-
-            if (!patientData) {
-                alert('No se encontraron datos para exportar para el DNI actual.');
+            const dni = getActiveDni();
+            if (!dni) {
+                alert('No hay un paciente cargado. Por favor, cargue o ingrese un DNI antes de guardar.');
                 return;
             }
 
+            // First, save all current data to the database
+            const patientData = await collectAndSaveAllData();
+            alert('Progreso guardado en la base de datos.');
+
+            // Now, create the downloadable file from the just-saved data
             const dataStr = JSON.stringify(patientData, null, 2);
             const blob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -1010,9 +1063,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-        } catch(error) {
-            alert('Error al exportar los datos.');
-            console.error('Export failed', error);
+
+        } catch(error: any) {
+            alert(`Error al guardar los datos: ${error.message}`);
+            console.error('Save/Export failed', error);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     });
     
@@ -1081,51 +1138,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dni) return;
 
         try {
-            const patientData = await apiGetPatientByDni(dni) || {};
+            // First, ensure all current data is saved
+            const patientData = await collectAndSaveAllData();
             
-            // Save all current form data before setting the timestamp
-            const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-            allForms.forEach(form => {
-                const tabId = form.closest('.tab-content')?.id;
-                if (!tabId || tabId === 'admin-usuarios') return;
-
-                const prefix = form.id.replace('form', '');
-                const formData: { [key: string]: any } = {};
-                const elements = form.elements;
-                for (let i = 0; i < elements.length; i++) {
-                    const item = elements[i] as HTMLInputElement;
-                    if (item.id && item.id.startsWith(prefix)) {
-                        const key = item.id.substring(prefix.length);
-                        if (item.type === 'checkbox') {
-                            formData[key] = item.checked;
-                        } else {
-                            formData[key] = item.value;
-                        }
-                    }
-                }
-                 form.querySelectorAll('table[data-table-name]').forEach(table => {
-                    const tableName = (table as HTMLElement).dataset.tableName;
-                    if(!tableName) return;
-                    const tableData: any[] = [];
-                    table.querySelectorAll('tbody tr').forEach(row => {
-                        const rowData: { [key: string]: any } = {};
-                        row.querySelectorAll('input, select, textarea').forEach(input => {
-                            const el = input as HTMLInputElement;
-                            if (el.name) rowData[el.name] = el.value;
-                        });
-                        tableData.push(rowData);
-                    });
-                    formData[tableName] = tableData;
-                });
-                patientData[tabId] = formData;
-            });
-
+            // Now, set the timestamp if it doesn't exist
             if (!patientData.dischargeTimestamp) {
                 patientData.dischargeTimestamp = Date.now();
                 await apiSavePatient(dni, patientData);
                 alert('Alta generada exitosamente. Este registro se bloqueará para edición en 24 horas.');
-            } else {
-                 await apiSavePatient(dni, patientData); // Save data even if timestamp exists
             }
         } catch (error) {
             console.error('Failed to set discharge timestamp', error);
@@ -1154,6 +1174,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!activeContent || !user) {
                 throw new Error("No active tab content found or user not logged in");
             }
+
+            // Save all current data before generating the PDF
+            await collectAndSaveAllData();
             
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageHeight = pdf.internal.pageSize.getHeight();
