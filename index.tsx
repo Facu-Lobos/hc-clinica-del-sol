@@ -765,12 +765,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const element = document.getElementById(`${prefix}${key}`);
             if (element) {
                 if (element.classList.contains('signature-display')) {
-                    const signatureBase64 = formData[key];
-                    if (signatureBase64 && typeof signatureBase64 === 'string' && signatureBase64.startsWith('data:image')) {
+                    const signatureObject = formData[key]; // This will be { src, name, specialty }
+                    if (signatureObject && typeof signatureObject === 'object' && signatureObject.src) {
                         element.innerHTML = ''; // Clear previous content
                         const img = document.createElement('img');
-                        img.src = signatureBase64;
-                        img.alt = 'Firma importada';
+                        img.src = signatureObject.src;
+                        img.alt = `Firma de ${signatureObject.name}`;
+                        (img as HTMLElement).dataset.name = signatureObject.name;
+                        (img as HTMLElement).dataset.specialty = signatureObject.specialty;
                         element.appendChild(img);
                     }
                 } else if (element instanceof HTMLInputElement && element.type === 'checkbox') {
@@ -797,11 +799,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 
                 const creator = tableName ? rowCreators[tableName] : undefined;
-
+                
                 if (creator) {
-                    (tableData as any[]).forEach(rowData => {
+                    // BUG FIX: If user doesn't have permissions, the "Add Row" button is disabled.
+                    // Instead of simulating a click, we create the row directly in memory,
+                    // populate it, and then append it to the table.
+                    (tableData as any[]).forEach((rowData: any) => {
                         const newRow = creator();
-                        // Populate the inputs in the new row
                         Object.keys(rowData).forEach(inputName => {
                             const input = newRow.querySelector(`[name="${inputName}"]`) as HTMLInputElement;
                             if (input) {
@@ -819,6 +823,9 @@ document.addEventListener('DOMContentLoaded', () => {
         unlockForm();
         const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
         allForms.forEach(form => form.reset());
+
+        // Clear all signature fields before loading
+        document.querySelectorAll('.signature-display').forEach(div => div.innerHTML = '');
 
         Object.keys(patientData).forEach(tabId => {
             if (tabId === 'dischargeTimestamp') return;
@@ -876,6 +883,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const signatureImg = document.createElement('img');
                 signatureImg.src = user.firma;
                 signatureImg.alt = `Firma de ${user.nombre} ${user.apellido}`;
+                // Store user info with the signature for persistence and PDF generation
+                (signatureImg as HTMLElement).dataset.name = `${user.nombre} ${user.apellido}`;
+                (signatureImg as HTMLElement).dataset.specialty = user.especialidad;
                 signatureDisplay.appendChild(signatureImg);
             }
         }
@@ -930,6 +940,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert('No se encontraron datos para este DNI. Puede crear un nuevo registro.');
                     const forms = document.querySelectorAll<HTMLFormElement>('#app-container form');
                     forms.forEach(form => form.reset());
+                    // Clear all signature fields for new patient
+                    document.querySelectorAll('.signature-display').forEach(div => div.innerHTML = '');
                     unlockForm();
                     
                     // Set the DNI in ALL forms for a new patient
@@ -1023,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const key = item.id.substring(prefix.length);
                     if (item.type === 'checkbox') {
                         formData[key] = item.checked;
-                    } else {
+                    } else if (item.type !== 'file') { // Exclude file inputs from serialization
                         formData[key] = item.value;
                     }
                 }
@@ -1047,7 +1059,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const key = sigDiv.id.substring(prefix.length);
                     const sigImg = sigDiv.querySelector('img');
                     if (sigImg && sigImg.src) {
-                        formData[key] = sigImg.src;
+                        formData[key] = {
+                            src: sigImg.src,
+                            name: (sigImg as HTMLElement).dataset.name || '',
+                            specialty: (sigImg as HTMLElement).dataset.specialty || '',
+                        };
+                    } else {
+                        formData[key] = null;
                     }
                 }
             });
@@ -1066,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput?.click();
     });
 
-    document.getElementById('export-clinic-btn')?.addEventListener('click', (e) => {
+    document.getElementById('export-clinic-btn')?.addEventListener('click', async (e) => {
         const btn = e.target as HTMLButtonElement;
         const originalText = btn.textContent;
         btn.disabled = true;
@@ -1080,6 +1098,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
     
             // Collect all data directly from the forms on the page without saving to the database.
+            // This allows exporting unsaved changes.
             const patientData: { [key: string]: any } = {};
             const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
             allForms.forEach(form => {
@@ -1123,7 +1142,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         const key = sigDiv.id.substring(prefix.length);
                         const sigImg = sigDiv.querySelector('img');
                         if (sigImg && sigImg.src) {
-                            formData[key] = sigImg.src;
+                            formData[key] = {
+                                src: sigImg.src,
+                                name: (sigImg as HTMLElement).dataset.name || '',
+                                specialty: (sigImg as HTMLElement).dataset.specialty || '',
+                            };
+                        } else {
+                            formData[key] = null;
                         }
                     }
                 });
@@ -1170,18 +1195,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const text = e.target?.result as string;
                 const importedData = JSON.parse(text);
                 
-                // USER REQUEST: Do not lock files on import.
-                // We achieve this by removing the timestamp that triggers the lock.
                 delete importedData.dischargeTimestamp;
 
                 let dni = '';
-                // Find the DNI from any of the main tabs within the imported data
                 const mainTabIds = ['hemodinamia', 'grupo-endoscopico', 'cirugias', 'cirugia-anestesia'];
                 for (const tabId of mainTabIds) {
                     const tabData = importedData[tabId];
                     if (tabData && tabData.dni) {
                         dni = tabData.dni;
-                        // Set DNI in all forms
                         ['hd', 'ge', 'cg', 'ca'].forEach(prefix => {
                             const dniField = document.getElementById(`${prefix}-dni`) as HTMLInputElement;
                             if (dniField) dniField.value = dni;
@@ -1196,8 +1217,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // BUG FIX: Do not save to the database on import. Only load into the forms.
                 // This prevents unexpected logouts if the user's session has expired.
-                // The data will be saved when the user clicks "Generate PDF".
-                // await apiSavePatient(dni, importedData); 
+                // The data will be saved when the user performs an explicit action like "Generate PDF".
                 
                 loadPatientDataIntoForms(importedData);
                 
@@ -1227,10 +1247,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dni) return;
 
         try {
-            // First, ensure all current data is saved
             const patientData = await collectAndSaveAllData();
             
-            // Now, set the timestamp if it doesn't exist
             if (!patientData.dischargeTimestamp) {
                 patientData.dischargeTimestamp = Date.now();
                 await apiSavePatient(dni, patientData);
@@ -1264,8 +1282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("No active tab content found or user not logged in");
             }
 
-            // Save all current data before generating the PDF
-            await collectAndSaveAllData();
+            const savedData = await collectAndSaveAllData();
             
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageHeight = pdf.internal.pageSize.getHeight();
@@ -1366,6 +1383,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     pdf.setDrawColor(0);
                 }
             };
+             const drawSavedSignature = (signatureObject: any, yPos: number) => {
+                if (!signatureObject || !signatureObject.src) return;
+                
+                const signatureXStart = pageWidth - margin - 70;
+                pdf.setDrawColor(150);
+                pdf.line(signatureXStart, yPos, pageWidth - margin, yPos);
+        
+                try {
+                    const signatureWidth = 35;
+                    const signatureHeight = 12;
+                    pdf.addImage(signatureObject.src, 'PNG', signatureXStart + 5, yPos - signatureHeight, signatureWidth, signatureHeight);
+                } catch (e) {
+                    console.error("Could not add signature image to PDF", e);
+                }
+        
+                pdf.setFontSize(8).setTextColor(100);
+                const signatureText = signatureObject.name || '';
+                const specialtyText = signatureObject.specialty ? `(${signatureObject.specialty})` : '';
+                
+                pdf.text(signatureText, signatureXStart, yPos + 4);
+                pdf.text(specialtyText, signatureXStart, yPos + 8);
+                
+                pdf.setFontSize(10).setTextColor(0,0,0);
+                pdf.setDrawColor(0);
+            };
             const drawMedicalDischargePage = (patientName: string, patientDNI: string) => {
                 pdf.addPage();
                 drawHeader();
@@ -1400,6 +1442,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // --- Conditional PDF Generation ---
             if (activeContent.id === 'hemodinamia') {
+                const tabData = savedData.hemodinamia || {};
                 const prefix = 'hd-';
                 const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
                 const getTextAreaValue = (id: string) => {
@@ -1454,7 +1497,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
                 drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-admin'], pageHeight - 25);
+
 
                 // --- PAGE 2 ---
                 pdf.addPage();
@@ -1481,7 +1525,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
                 drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-1'], pageHeight - 25);
 
                 // --- PAGE 3 ---
                 pdf.addPage();
@@ -1496,7 +1540,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
                 y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
                 drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-2'], pageHeight - 25);
                 
                 // --- PAGE 4 ---
                 pdf.addPage();
@@ -1508,7 +1552,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawCenteredField('PACIENTE:', getValue('paciente-4'), y);
                 y += lineSpacing;
                 drawTextArea('', getTextAreaValue('reporte-quirurgico'), y, 25);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-3'], pageHeight - 25);
                 
                 // --- PAGE 5 ---
                 pdf.addPage();
@@ -1546,7 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     y += 8;
                 }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-4'], pageHeight - 25);
 
                 // --- PAGE 6 ---
                 pdf.addPage();
@@ -1581,7 +1625,7 @@ document.addEventListener('DOMContentLoaded', () => {
                      }
                      y += 12;
                 }
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-enfermero'], pageHeight - 25);
                 
                 const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
                 const patientDNI = getValue('dni');
@@ -1593,6 +1637,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
             } else if (activeContent.id === 'grupo-endoscopico') {
+                const tabData = savedData['grupo-endoscopico'] || {};
                 const prefix = 'ge-';
                 const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
                 const getTextAreaValue = (id: string) => {
@@ -1600,7 +1645,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return pdf.splitTextToSize(value, pageWidth - margin * 2);
                 };
 
-                // --- PAGE 1 (Same as Hemodinamia) ---
+                // --- PAGE 1 ---
                 drawHeader();
                 y = 45;
                 pdf.setFontSize(10).setTextColor(0,0,0);
@@ -1647,9 +1692,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
                 drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-admin'], pageHeight - 25);
                 
-                // --- PAGE 2 (Same as Hemodinamia) ---
+                // --- PAGE 2 ---
                 pdf.addPage();
                 drawHeader();
                 y = 45;
@@ -1674,9 +1719,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
                 drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-1'], pageHeight - 25);
 
-                // --- PAGE 3 (Same as Hemodinamia) ---
+                // --- PAGE 3 ---
                 pdf.addPage();
                 drawHeader();
                 pdf.setFontSize(10).setTextColor(0,0,0);
@@ -1689,7 +1734,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
                 y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
                 drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-2'], pageHeight - 25);
 
                 // --- PAGE 4 (Evolucion) ---
                 pdf.addPage();
@@ -1711,7 +1756,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     y += lineHeight;
                 }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-3'], pageHeight - 25);
 
                 // --- PAGE 5 (Report) ---
                 pdf.addPage();
@@ -1740,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     lineY += reportLineHeight;
                 }
                 pdf.setLineDashPattern([], 0);
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-enfermero'], pageHeight - 25);
 
                 const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
                 const patientDNI = getValue('dni');
@@ -1752,6 +1797,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
             } else if (activeContent.id === 'cirugias') {
+                const tabData = savedData.cirugias || {};
                 const prefix = 'cg-';
                 const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '....................';
                 const getTextAreaValue = (id: string) => {
@@ -1806,7 +1852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
                 drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-admin'], pageHeight - 25);
 
                 // --- PAGE 2 (Standard) ---
                 pdf.addPage();
@@ -1833,7 +1879,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
                 drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-1'], pageHeight - 25);
 
                 // --- PAGE 3 (Standard) ---
                 pdf.addPage();
@@ -1848,7 +1894,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
                 y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
                 drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-2'], pageHeight - 25);
 
                 // --- PAGE 4 (Parte Quirurgico) ---
                 pdf.addPage();
@@ -1896,7 +1942,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y = drawTextArea('DIAGNOSTICO PREOPERATORIO:', getTextAreaValue('diagnostico-preop'), y, 4);
                 y = drawTextArea('OPERACIÓN PRACTICADA:', getTextAreaValue('operacion-practicada'), y, 4);
                 drawTextArea('DETALLES DE LA TECNICA:', getTextAreaValue('detalles-tecnica'), y, 8);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-3'], pageHeight - 25);
                 
                 // --- PAGE 5 (Parte Quirurgico Hoja 2) ---
                 pdf.addPage();
@@ -1907,7 +1953,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawField('PACIENTE:', getValue('paciente-5'), y);
                 y += lineSpacing * 1.5;
                 drawTextArea('', getTextAreaValue('detalles-quirurgico-2'), y, 38);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-4'], pageHeight - 25);
 
                 // --- PAGE 6 (Evolucion) ---
                 pdf.addPage();
@@ -1929,7 +1975,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     y += lineHeightCG;
                 }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-5'], pageHeight - 25);
 
                 const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
                 const patientDNI = getValue('dni');
@@ -1941,6 +1987,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
             } else if (activeContent.id === 'cirugia-anestesia') {
+                const tabData = savedData['cirugia-anestesia'] || {};
                 const prefix = 'ca-';
                 const getValue = (id: string) => (document.getElementById(prefix + id) as HTMLInputElement)?.value || '';
                 const getTextAreaValue = (id: string) => {
@@ -1998,7 +2045,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 drawField('FECHA DE EGRESO:', getValue('fecha-egreso'), y);
                 drawField('HORA:', getValue('hora-egreso'), y, 115, 140);
-                if (user?.especialidad === 'Administrativo' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-admin'], pageHeight - 25);
 
                 // --- PAGE 2 (Standard) ---
                 pdf.addPage();
@@ -2025,7 +2072,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y += lineSpacing;
                 y = drawTextArea('CABEZA Y CUELLO:', getTextAreaValue('cabeza-cuello'), y, 2);
                 drawTextArea('APARATO RESPIRATORIO:', getTextAreaValue('aparato-respiratorio'), y, 2);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-1'], pageHeight - 25);
 
                 // --- PAGE 3 (Standard) ---
                 pdf.addPage();
@@ -2040,7 +2087,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y = drawTextArea('OBSERVACIONES:', getTextAreaValue('observaciones'), y, 4);
                 y = drawTextArea('ESTUDIOS COMPLEMENTARIOS:', getTextAreaValue('estudios-complementarios'), y, 4);
                 drawTextArea('TRATAMENTO:', getTextAreaValue('tratamiento'), y, 4);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-2'], pageHeight - 25);
 
                 // --- PAGE 4 (Parte Quirurgico) ---
                 pdf.addPage();
@@ -2080,7 +2127,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 y = drawTextArea('DIAGNOSTICO PREOPERATORIO:', getTextAreaValue('diagnostico-preop'), y, 4);
                 y = drawTextArea('OPERACIÓN PRACTICADA:', getTextAreaValue('operacion-practicada'), y, 4);
                 drawTextArea('DETALLES DE LA TECNICA:', getTextAreaValue('detalles-tecnica'), y, 8);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-3'], pageHeight - 25);
                 
                 // --- PAGE 5 (Parte Quirurgico Hoja 2) ---
                 pdf.addPage();
@@ -2091,7 +2138,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawField('PACIENTE:', getValue('paciente-5'), y);
                 y += lineSpacing * 1.5;
                 drawTextArea('', getTextAreaValue('detalles-quirurgico-2'), y, 38);
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-4'], pageHeight - 25);
 
                 // --- PAGE 6 (Anesthesia Protocol Cover) ---
                 pdf.addPage();
@@ -2103,9 +2150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const noteText = "El protocolo anestésico completo, firmado por el especialista, se adjunta en las páginas siguientes.";
                 const splitNote = pdf.splitTextToSize(noteText, pageWidth - margin * 2);
                 pdf.text(splitNote, margin, y);
-                if (user?.especialidad === 'Anestesista' || user?.especialidad === 'Administrador') {
-                    drawUserSignature();
-                }
+                drawSavedSignature(tabData['sig-anestesista'], pageHeight - 25);
 
                 // --- PAGE 7 (Evolucion) ---
                 pdf.addPage();
@@ -2127,7 +2172,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     y += lineHeightCA;
                 }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-5'], pageHeight - 25);
 
                 // --- PAGE 8 (Prescripciones) ---
                 pdf.addPage();
@@ -2156,7 +2201,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     y += presCellHeight;
                 }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-6'], pageHeight - 25);
                 
                 // --- PAGE 9 (Prácticas Médicas) ---
                 pdf.addPage();
@@ -2194,7 +2239,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     y += 8;
                 }
-                if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-medico-7'], pageHeight - 25);
 
                 // --- PAGE 10 (Control de Enfermería) ---
                 pdf.addPage();
@@ -2229,7 +2274,7 @@ document.addEventListener('DOMContentLoaded', () => {
                      }
                      y += 12;
                 }
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-enfermero'], pageHeight - 25);
                 
                 // --- PAGE 11 (Report) ---
                 pdf.addPage();
@@ -2258,7 +2303,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     lineY2 += reportLineHeight;
                 }
                 pdf.setLineDashPattern([], 0);
-                if (user?.especialidad === 'Enfermero' || user?.especialidad === 'Administrador') drawUserSignature();
+                drawSavedSignature(tabData['sig-enfermero-2'], pageHeight - 25);
 
                 const patientName = `${getValue('apellido')}, ${getValue('nombres')}`;
                 const patientDNI = getValue('dni');
@@ -2295,7 +2340,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.body.appendChild(link);
                 link.click();
                 
-                // Clean up after a short delay to ensure the download initiates and doesn't block UI.
+                // BUG FIX: The timeout was causing the app to hang. A longer delay for blob processing ensures
+                // the download link is revoked only after the browser has initiated the download,
+                // preventing the UI from freezing.
                 setTimeout(() => {
                     if (link.parentNode) {
                         document.body.removeChild(link);
