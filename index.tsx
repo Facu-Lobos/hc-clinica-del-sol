@@ -706,6 +706,57 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
+    // --- Helper functions for creating dynamic table rows ---
+    const createPracticaRow = (): HTMLTableRowElement => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><input type="date" name="Practica Fecha" required></td>
+            <td><input type="text" name="Practica Código" required></td>
+            <td><input type="text" name="Practica Descripción" required></td>
+            <td><input type="number" name="Practica Cantidad" required></td>
+            <td><input type="text" name="Practica Observación" required></td>
+            <td><button type="button" class="delete-row-btn">&times;</button></td>
+        `;
+        return row;
+    };
+
+    const createEnfermeriaRow = (): HTMLTableRowElement => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><input type="date" name="Enfermeria Fecha" required></td>
+            <td><input type="time" name="Enfermeria Hora" required></td>
+            <td><input type="text" name="Enfermeria TA" required></td>
+            <td><input type="text" name="Enfermeria FC" required></td>
+            <td><input type="text" name="Enfermeria FR" required></td>
+            <td><input type="text" name="Enfermeria Temp" required></td>
+            <td><input type="text" name="Enfermeria Observaciones" required></td>
+            <td><button type="button" class="delete-row-btn">&times;</button></td>
+        `;
+        return row;
+    };
+
+    const createMonitoreoRow = (): HTMLTableRowElement => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><input type="time" name="Monitoreo Hora" required></td>
+            <td><input type="number" name="Monitoreo Sistolica" required></td>
+            <td><input type="number" name="Monitoreo Diastolica" required></td>
+            <td><input type="number" name="Monitoreo Pulso" required></td>
+            <td><button type="button" class="delete-row-btn">&times;</button></td>
+        `;
+        return row;
+    };
+
+    const createPrescripcionRow = (): HTMLTableRowElement => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><input type="date" name="Prescripcion Fecha" required></td>
+            <td><input type="text" name="Prescripcion Indicaciones" required></td>
+            <td><button type="button" class="delete-row-btn">&times;</button></td>
+        `;
+        return row;
+    };
+
     // --- Centralized Patient Data Loading Logic ---
     const populateForm = (form: HTMLFormElement, formData: any) => {
         const prefix = form.id.replace('form', ''); // e.g., 'hd-', 'ge-'
@@ -729,26 +780,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (tableData && tableBody) {
                 tableBody.innerHTML = ''; // Clear existing rows
-                const addRowButtonClass = table.closest('.form-section')?.querySelector('button[class*="add-"]')?.classList.toString().match(/add-[\w-]+-row/)?.[0];
 
-                (tableData as any[]).forEach(rowData => {
-                    if (addRowButtonClass) {
-                        const addButton = document.createElement('button');
-                        addButton.style.display = 'none';
-                        addButton.classList.add(addRowButtonClass);
-                        form.appendChild(addButton);
-                        addButton.click();
-                        addButton.remove();
-                       
-                        const newRow = tableBody.querySelector('tr:last-child');
-                        if (newRow) {
-                            Object.keys(rowData).forEach(inputName => {
-                                const input = newRow.querySelector(`[name="${inputName}"]`) as HTMLInputElement;
-                                if (input) input.value = rowData[inputName];
-                            });
-                        }
-                    }
-                });
+                const rowCreators: { [key: string]: () => HTMLTableRowElement } = {
+                    'practicasMedicas': createPracticaRow,
+                    'enfermeria': createEnfermeriaRow,
+                    'prescripciones': createPrescripcionRow
+                };
+                
+                const creator = tableName ? rowCreators[tableName] : undefined;
+
+                if (creator) {
+                    (tableData as any[]).forEach(rowData => {
+                        const newRow = creator();
+                        // Populate the inputs in the new row
+                        Object.keys(rowData).forEach(inputName => {
+                            const input = newRow.querySelector(`[name="${inputName}"]`) as HTMLInputElement;
+                            if (input) {
+                                input.value = rowData[inputName];
+                            }
+                        });
+                        tableBody.appendChild(newRow);
+                    });
+                }
             }
         });
     };
@@ -819,61 +872,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (target.classList.contains('add-practica-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.practicas-medicas-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="date" name="Practica Fecha" required></td>
-                <td><input type="text" name="Practica Código" required></td>
-                <td><input type="text" name="Practica Descripción" required></td>
-                <td><input type="number" name="Practica Cantidad" required></td>
-                <td><input type="text" name="Practica Observación" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
+            const tableBody = target.closest('.form-section')?.querySelector('.practicas-medicas-table tbody');
+            if (tableBody) tableBody.appendChild(createPracticaRow());
         }
 
         if (target.classList.contains('add-enfermeria-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.enfermeria-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="date" name="Enfermeria Fecha" required></td>
-                <td><input type="time" name="Enfermeria Hora" required></td>
-                <td><input type="text" name="Enfermeria TA" required></td>
-                <td><input type="text" name="Enfermeria FC" required></td>
-                <td><input type="text" name="Enfermeria FR" required></td>
-                <td><input type="text" name="Enfermeria Temp" required></td>
-                <td><input type="text" name="Enfermeria Observaciones" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
+            const tableBody = target.closest('.form-section')?.querySelector('.enfermeria-table tbody');
+            if (tableBody) tableBody.appendChild(createEnfermeriaRow());
         }
         
         if (target.classList.contains('add-monitoreo-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.monitoreo-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="time" name="Monitoreo Hora" required></td>
-                <td><input type="number" name="Monitoreo Sistolica" required></td>
-                <td><input type="number" name="Monitoreo Diastolica" required></td>
-                <td><input type="number" name="Monitoreo Pulso" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
+            const tableBody = target.closest('.form-section')?.querySelector('.monitoreo-table tbody');
+            if (tableBody) tableBody.appendChild(createMonitoreoRow());
         }
 
         if (target.classList.contains('add-prescripcion-row')) {
-            const section = target.closest('.form-section');
-            const tableBody = section?.querySelector('.prescripciones-table tbody');
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><input type="date" name="Prescripcion Fecha" required></td>
-                <td><input type="text" name="Prescripcion Indicaciones" required></td>
-                <td><button type="button" class="delete-row-btn">&times;</button></td>
-            `;
-            tableBody?.appendChild(row);
+            const tableBody = target.closest('.form-section')?.querySelector('.prescripciones-table tbody');
+            if (tableBody) tableBody.appendChild(createPrescripcionRow());
         }
 
         if (target.classList.contains('delete-row-btn')) {
