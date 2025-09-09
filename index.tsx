@@ -1061,8 +1061,15 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.appendChild(link);
             link.click();
             
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            // Clean up the DOM and URL object after a short delay to ensure the download has been initiated.
+            // This prevents potential race conditions in some browsers where the link is removed before
+            // the click event is fully processed, which could lead to an unresponsive UI.
+            setTimeout(() => {
+                if (link.parentNode) {
+                    document.body.removeChild(link);
+                }
+                URL.revokeObjectURL(url);
+            }, 100);
 
         } catch(error: any) {
             alert(`Error al guardar los datos: ${error.message}`);
