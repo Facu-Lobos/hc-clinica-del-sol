@@ -759,14 +759,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Centralized Patient Data Loading Logic ---
     const populateForm = (form: HTMLFormElement, formData: any) => {
-        const prefix = form.id.replace('form', ''); // e.g., 'hd-', 'ge-'
+        const prefix = form.id.replace('form', ''); // e.g., 'hd-'
 
         Object.keys(formData).forEach(key => {
-            const element = document.getElementById(`${prefix}${key}`) as HTMLInputElement;
+            const element = document.getElementById(`${prefix}${key}`);
             if (element) {
-                if (element.type === 'checkbox') {
+                if (element.classList.contains('signature-display')) {
+                    const signatureBase64 = formData[key];
+                    if (signatureBase64 && typeof signatureBase64 === 'string' && signatureBase64.startsWith('data:image')) {
+                        element.innerHTML = ''; // Clear previous content
+                        const img = document.createElement('img');
+                        img.src = signatureBase64;
+                        img.alt = 'Firma importada';
+                        element.appendChild(img);
+                    }
+                } else if (element instanceof HTMLInputElement && element.type === 'checkbox') {
                     element.checked = formData[key];
-                } else {
+                } else if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
                     element.value = formData[key];
                 }
             }
@@ -1033,6 +1042,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 formData[tableName] = tableData;
             });
+            form.querySelectorAll<HTMLDivElement>('.signature-display').forEach(sigDiv => {
+                if (sigDiv.id && sigDiv.id.startsWith(prefix)) {
+                    const key = sigDiv.id.substring(prefix.length);
+                    const sigImg = sigDiv.querySelector('img');
+                    if (sigImg && sigImg.src) {
+                        formData[key] = sigImg.src;
+                    }
+                }
+            });
             patientData[tabId] = formData;
         });
 
@@ -1099,6 +1117,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         tableData.push(rowData);
                     });
                     formData[tableName] = tableData;
+                });
+                form.querySelectorAll<HTMLDivElement>('.signature-display').forEach(sigDiv => {
+                    if (sigDiv.id && sigDiv.id.startsWith(prefix)) {
+                        const key = sigDiv.id.substring(prefix.length);
+                        const sigImg = sigDiv.querySelector('img');
+                        if (sigImg && sigImg.src) {
+                            formData[key] = sigImg.src;
+                        }
+                    }
                 });
                 patientData[tabId] = formData;
             });
@@ -1354,12 +1381,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawField('FECHA DE ALTA:', new Date().toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' }), y);
                 y += lineSpacing * 2;
 
-                const dischargeText = "Se otorga el alta médica al paciente, con indicación de continuar tratamiento y seguimiento de forma ambulatoria según las siguientes indicaciones:";
+                const dischargeText = "Se otorga el alta médica al paciente, con indicación de continuar tratamiento y seguimiento de forma ambulatoria.";
                 const splitText = pdf.splitTextToSize(dischargeText, pageWidth - margin * 2);
                 pdf.text(splitText, margin, y);
                 y += splitText.length * 4 + lineSpacing;
-                
-                y = drawTextArea('INDICACIONES:', [], y, 15);
                 
                 if (user?.especialidad === 'Médico' || user?.especialidad === 'Administrador') {
                     drawUserSignature();
