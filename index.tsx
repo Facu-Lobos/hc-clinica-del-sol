@@ -1033,47 +1033,83 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput?.click();
     });
 
-    document.getElementById('export-clinic-btn')?.addEventListener('click', async (e) => {
+    document.getElementById('export-clinic-btn')?.addEventListener('click', (e) => {
         const btn = e.target as HTMLButtonElement;
         const originalText = btn.textContent;
         btn.disabled = true;
-        btn.textContent = 'Guardando...';
-
+        btn.textContent = 'Generando...';
+    
         try {
             const dni = getActiveDni();
             if (!dni) {
                 alert('No hay un paciente cargado. Por favor, cargue o ingrese un DNI antes de guardar.');
                 return;
             }
-
-            // First, save all current data to the database
-            const patientData = await collectAndSaveAllData();
-            alert('Progreso guardado en la base de datos.');
-
-            // Now, create the downloadable file from the just-saved data
+    
+            // Collect all data directly from the forms on the page without saving to the database.
+            const patientData: { [key: string]: any } = {};
+            const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
+            allForms.forEach(form => {
+                const tabId = form.closest('.tab-content')?.id;
+                if (!tabId || tabId === 'admin-usuarios') return;
+    
+                const prefix = form.id.replace('form', '');
+                const formData: { [key: string]: any } = {};
+                const elements = form.elements;
+                for (let i = 0; i < elements.length; i++) {
+                    const item = elements[i] as HTMLInputElement;
+                    // Skip file inputs, as their value cannot be meaningfully serialized to JSON.
+                    if (item.type === 'file') {
+                        continue;
+                    }
+                    if (item.id && item.id.startsWith(prefix)) {
+                        const key = item.id.substring(prefix.length);
+                        if (item.type === 'checkbox') {
+                            formData[key] = item.checked;
+                        } else {
+                            formData[key] = item.value;
+                        }
+                    }
+                }
+                form.querySelectorAll('table[data-table-name]').forEach(table => {
+                    const tableName = (table as HTMLElement).dataset.tableName;
+                    if (!tableName) return;
+                    const tableData: any[] = [];
+                    table.querySelectorAll('tbody tr').forEach(row => {
+                        const rowData: { [key: string]: any } = {};
+                        row.querySelectorAll('input, select, textarea').forEach(input => {
+                            const el = input as HTMLInputElement;
+                            if (el.name) rowData[el.name] = el.value;
+                        });
+                        tableData.push(rowData);
+                    });
+                    formData[tableName] = tableData;
+                });
+                patientData[tabId] = formData;
+            });
+    
+            // Create the downloadable file from the collected form data.
             const dataStr = JSON.stringify(patientData, null, 2);
             const blob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
-            
+    
             const link = document.createElement('a');
             link.href = url;
             link.download = `paciente-${dni}.clinic`;
             document.body.appendChild(link);
             link.click();
-            
-            // Clean up the DOM and URL object after a short delay to ensure the download has been initiated.
-            // This prevents potential race conditions in some browsers where the link is removed before
-            // the click event is fully processed, which could lead to an unresponsive UI.
+    
+            // Clean up after a short delay to ensure the download initiates.
             setTimeout(() => {
                 if (link.parentNode) {
                     document.body.removeChild(link);
                 }
                 URL.revokeObjectURL(url);
             }, 100);
-
-        } catch(error: any) {
-            alert(`Error al guardar los datos: ${error.message}`);
-            console.error('Save/Export failed', error);
+    
+        } catch (error: any) {
+            alert(`Error al generar el archivo .clinic: ${error.message}`);
+            console.error('Export failed', error);
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;
