@@ -1152,7 +1152,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error('No se pudo encontrar un DNI en el archivo importado.');
                 }
                 
-                await apiSavePatient(dni, importedData);
+                // BUG FIX: Do not save to the database on import. Only load into the forms.
+                // This prevents unexpected logouts if the user's session has expired.
+                // The data will be saved when the user clicks "Generate PDF".
+                // await apiSavePatient(dni, importedData); 
+                
                 loadPatientDataIntoForms(importedData);
                 
                 alert(`Datos del paciente con DNI ${dni} importados y cargados exitosamente.`);
