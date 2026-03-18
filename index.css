@@ -331,6 +331,32 @@ main {
     padding-bottom: 0.75rem;
 }
 
+/* DNI search — destacado al inicio del formulario */
+.dni-search-group {
+    background-color: #f0f8ff;
+    border: 2px solid var(--primary-blue);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.dni-search-group label {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-blue);
+}
+
+.dni-search-group input {
+    font-size: 1.1rem;
+    padding: 0.85rem 1rem;
+    letter-spacing: 0.05em;
+}
+
+.dni-search-group .btn-secondary {
+    white-space: nowrap;
+    font-weight: 600;
+}
+
 .form-section button:disabled {
     display: none;
 }

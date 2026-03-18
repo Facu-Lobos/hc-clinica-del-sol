@@ -172,14 +172,26 @@ const apiUpdateUserProfile = async (userId: string, profileData: Partial<Omit<Us
  * @param password The new password.
  */
 const apiUpdateUserPassword = async (userId: string, password: string) => {
-    const { data, error } = await supabase.functions.invoke('update-user-password', {
-        body: { userId, password },
+    const response = await fetch(`${VITE_SUPABASE_URL}/functions/v1/update-user-password`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId, password }),
     });
-    if (error) {
-        console.error("Error invoking update-user-password function:", error);
-        // Provide a more helpful error to the developer/admin.
-        throw new Error("El servidor rechazó la solicitud de cambio de contraseña. Verifique los logs de la Edge Function 'update-user-password' en Supabase.");
+
+    let data: any;
+    try {
+        data = await response.json();
+    } catch {
+        throw new Error(`Error del servidor (${response.status}): ${response.statusText}`);
     }
+
+    if (!response.ok) {
+        throw new Error(data?.error || `Error al cambiar contraseña: ${response.status}`);
+    }
+
     return data;
 }
 
@@ -205,24 +217,34 @@ const apiDoesAdminExist = async (): Promise<boolean> => {
 
 
 const apiCreateUser = async (userData: { username: string; password: string; profileData: Omit<UserProfile, 'id'> }) => {
-    // Revertimos la lógica a Edge Functions ya que la inyección directa SQL corrompió la tabla Auth
     const payload = {
         username: userData.username,
         password: userData.password,
         profileData: userData.profileData,
     };
 
-    const { data, error } = await supabase.functions.invoke('create-user', {
-        body: payload,
+    // Usamos fetch directamente para obtener el mensaje de error real de la Edge Function.
+    // Usamos el anon key como bearer (es un JWT válido para Supabase y evita problemas de sesión).
+    const response = await fetch(`${VITE_SUPABASE_URL}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
     });
 
-    if (error) {
-        console.error("Error invoking create-user function:", error);
-        if (error.message.includes("non-2xx status code")) {
-            throw new Error("El servidor rechazó la solicitud. Verifique los logs de la Edge Function 'create-user' en Supabase para más detalles.");
-        }
-        throw error;
+    let data: any;
+    try {
+        data = await response.json();
+    } catch {
+        throw new Error(`Error del servidor (${response.status}): ${response.statusText}`);
     }
+
+    if (!response.ok) {
+        throw new Error(data?.error || `Error del servidor: ${response.status}`);
+    }
+
     return data;
 }
 
@@ -278,6 +300,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
         });
+
+        // El campo DNI y el botón "Buscar / Cargar Paciente" deben estar disponibles para todos los roles,
+        // ya que cualquier profesional necesita buscar y cargar datos de un paciente.
+        document.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.dni-search-group input, .dni-search-group button').forEach(el => {
+            el.disabled = false;
+        });
     };
     
     // --- Form Locking Logic ---
@@ -285,12 +313,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (lockBanner) lockBanner.style.display = 'none';
 
         const generateBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
-        const importBtn = document.getElementById('import-clinic-btn') as HTMLButtonElement;
-        const exportBtn = document.getElementById('export-clinic-btn') as HTMLButtonElement;
-        
+        const saveBtn = document.getElementById('save-data-btn') as HTMLButtonElement;
         if(generateBtn) generateBtn.disabled = false;
-        if(importBtn) importBtn.disabled = false;
-        if(exportBtn) exportBtn.disabled = false;
+        if(saveBtn) saveBtn.disabled = false;
 
         applyRoleBasedAccess(getCurrentUser());
     };
@@ -309,12 +334,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const generateBtn = document.getElementById('generate-alta-btn') as HTMLButtonElement;
-        const importBtn = document.getElementById('import-clinic-btn') as HTMLButtonElement;
-        const exportBtn = document.getElementById('export-clinic-btn') as HTMLButtonElement;
-
+        const saveBtn = document.getElementById('save-data-btn') as HTMLButtonElement;
         if (generateBtn) generateBtn.disabled = true;
-        if (importBtn) importBtn.disabled = true;
-        if (exportBtn) exportBtn.disabled = true;
+        if (saveBtn) saveBtn.disabled = true;
     };
 
 
@@ -1071,166 +1093,27 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
 
-    // --- Import / Export Logic ---
-    const fileInput = document.getElementById('import-clinic-input') as HTMLInputElement;
-
-    document.getElementById('import-clinic-btn')?.addEventListener('click', () => {
-        fileInput?.click();
-    });
-
-    document.getElementById('export-clinic-btn')?.addEventListener('click', async (e) => {
+    // --- Guardar datos manualmente ---
+    document.getElementById('save-data-btn')?.addEventListener('click', async (e) => {
         const btn = e.target as HTMLButtonElement;
         const originalText = btn.textContent;
         btn.disabled = true;
-        btn.textContent = 'Generando...';
-    
+        btn.textContent = 'Guardando...';
+
         try {
             const dni = getActiveDni();
             if (!dni) {
-                alert('No hay un paciente cargado. Por favor, cargue o ingrese un DNI antes de guardar.');
+                alert('Ingresá el DNI del paciente antes de guardar.');
                 return;
             }
-    
-            // Collect all data directly from the forms on the page without saving to the database.
-            // This allows exporting unsaved changes.
-            const patientData: { [key: string]: any } = {};
-            const allForms = document.querySelectorAll<HTMLFormElement>('#app-container form');
-            allForms.forEach(form => {
-                const tabId = form.closest('.tab-content')?.id;
-                if (!tabId || tabId === 'admin-usuarios') return;
-    
-                const prefix = form.id.replace('form', '');
-                const formData: { [key: string]: any } = {};
-                const elements = form.elements;
-                for (let i = 0; i < elements.length; i++) {
-                    const item = elements[i] as HTMLInputElement;
-                    // Skip file inputs, as their value cannot be meaningfully serialized to JSON.
-                    if (item.type === 'file') {
-                        continue;
-                    }
-                    if (item.id && item.id.startsWith(prefix)) {
-                        const key = item.id.substring(prefix.length);
-                        if (item.type === 'checkbox') {
-                            formData[key] = item.checked;
-                        } else {
-                            formData[key] = item.value;
-                        }
-                    }
-                }
-                form.querySelectorAll('table[data-table-name]').forEach(table => {
-                    const tableName = (table as HTMLElement).dataset.tableName;
-                    if (!tableName) return;
-                    const tableData: any[] = [];
-                    table.querySelectorAll('tbody tr').forEach(row => {
-                        const rowData: { [key: string]: any } = {};
-                        row.querySelectorAll('input, select, textarea').forEach(input => {
-                            const el = input as HTMLInputElement;
-                            if (el.name) rowData[el.name] = el.value;
-                        });
-                        tableData.push(rowData);
-                    });
-                    formData[tableName] = tableData;
-                });
-                form.querySelectorAll<HTMLDivElement>('.signature-display').forEach(sigDiv => {
-                    if (sigDiv.id && sigDiv.id.startsWith(prefix)) {
-                        const key = sigDiv.id.substring(prefix.length);
-                        const sigImg = sigDiv.querySelector('img');
-                        if (sigImg && sigImg.src) {
-                            formData[key] = {
-                                src: sigImg.src,
-                                name: (sigImg as HTMLElement).dataset.name || '',
-                                specialty: (sigImg as HTMLElement).dataset.specialty || '',
-                            };
-                        } else {
-                            formData[key] = null;
-                        }
-                    }
-                });
-                patientData[tabId] = formData;
-            });
-    
-            // Create the downloadable file from the collected form data.
-            const dataStr = JSON.stringify(patientData, null, 2);
-            const blob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-    
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `paciente-${dni}.clinic`;
-            document.body.appendChild(link);
-            link.click();
-    
-            // Clean up after a short delay to ensure the download initiates.
-            setTimeout(() => {
-                if (link.parentNode) {
-                    document.body.removeChild(link);
-                }
-                URL.revokeObjectURL(url);
-            }, 100);
-    
+            await collectAndSaveAllData();
+            btn.textContent = '✓ Guardado';
+            setTimeout(() => { btn.textContent = originalText; }, 2000);
         } catch (error: any) {
-            alert(`Error al generar el archivo .clinic: ${error.message}`);
-            console.error('Export failed', error);
+            alert(`Error al guardar: ${error.message}`);
         } finally {
             btn.disabled = false;
-            btn.textContent = originalText;
         }
-    });
-    
-    fileInput?.addEventListener('change', (event) => {
-        const target = event.target as HTMLInputElement;
-        const file = target.files?.[0];
-
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const text = e.target?.result as string;
-                const importedData = JSON.parse(text);
-                
-                delete importedData.dischargeTimestamp;
-
-                let dni = '';
-                const mainTabIds = ['hemodinamia', 'grupo-endoscopico', 'cirugias', 'cirugia-anestesia'];
-                for (const tabId of mainTabIds) {
-                    const tabData = importedData[tabId];
-                    if (tabData && tabData.dni) {
-                        dni = tabData.dni;
-                        ['hd', 'ge', 'cg', 'ca'].forEach(prefix => {
-                            const dniField = document.getElementById(`${prefix}-dni`) as HTMLInputElement;
-                            if (dniField) dniField.value = dni;
-                        });
-                        break;
-                    }
-                }
-                
-                if (!dni) {
-                    throw new Error('No se pudo encontrar un DNI en el archivo importado.');
-                }
-                
-                // BUG FIX: Do not save to the database on import. Only load into the forms.
-                // This prevents unexpected logouts if the user's session has expired.
-                // The data will be saved when the user performs an explicit action like "Generate PDF".
-                
-                loadPatientDataIntoForms(importedData);
-                
-                alert(`Datos del paciente con DNI ${dni} importados y cargados exitosamente.`);
-
-            } catch (error: any) {
-                console.error('Error al importar archivo:', error);
-                alert(`Hubo un error al procesar el archivo .clinic. Asegúrese de que el formato sea correcto. Detalles: ${error.message}`);
-            } finally {
-                target.value = '';
-            }
-        };
-
-        reader.onerror = () => {
-            alert('Error al leer el archivo.');
-            target.value = '';
-        };
-
-        reader.readAsText(file);
     });
 
     // --- PDF Generation Logic ---
